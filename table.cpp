@@ -736,6 +736,7 @@ void row_joiner::process_token(const char* token)
         c += num_columns[t];
       if(keys[c].compare(token) && keys[c].compare(string(token) + " of " + table_name[table]))
         throw runtime_error("column keys don't match previous tables");
+      ++column;
     }
   }
 }
@@ -771,7 +772,7 @@ void row_joiner::process_lines()
         if(nki == keys.end()) break;
 
         found = 1;
-        size_t keyi = ki - keys.begin();
+        size_t keyi = nki - keys.begin();
         size_t t = 0;
         for(; t < num_columns.size(); ++t) {
           if(keyi < num_columns[t]) break;
@@ -821,6 +822,8 @@ void row_joiner::process_lines()
 void row_joiner::process()
 {
   if(!out) throw runtime_error("row_joiner has no out");
+
+  if(data.size()) process_lines();
 
   out->process_stream();
   table_name.clear();
