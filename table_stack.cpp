@@ -1,8 +1,9 @@
 #include <iostream>
 #include <stdexcept>
-#include "csv.h"
+#include "table.h"
 
 using namespace std;
+using namespace table;
 
 int main(const unsigned int argc, char const * const argv[])
 {

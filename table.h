@@ -13,6 +13,23 @@
 #include <pcrecpp.h>
 
 
+#ifdef use_unordered
+namespace std { namespace tr1 {
+template<> struct hash<vector<string> >
+{
+  hash<string> h;
+  size_t operator()(const vector<string>& arg) const {
+    stringstream ss;
+    for(vector<string>::const_iterator i = arg.begin(); i != arg.end(); ++i)
+      ss << *i;
+    return h(ss.str());
+  }
+};
+}}
+
+
+namespace table {
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -169,15 +186,6 @@ public:
     }
   }
 };
-
-#ifdef use_unordered
-namespace std { namespace tr1 {
-template<> struct hash<cstring_queue>
-{
-  size_t operator()(const cstring_queue& arg) const { return arg.hash(); }
-};
-}}
-#endif
 
 
 
@@ -386,21 +394,6 @@ struct regex_split_action_t
   regex_split_action_t() : regex(0) {}
   ~regex_split_action_t() { delete regex; }
 };
-
-#ifdef use_unordered
-namespace std { namespace tr1 {
-template<> struct hash<vector<string> >
-{
-  hash<string> h;
-  size_t operator()(const vector<string>& arg) const {
-    stringstream ss;
-    for(vector<string>::const_iterator i = arg.begin(); i != arg.end(); ++i)
-      ss << *i;
-    return h(ss.str());
-  }
-};
-}}
-#endif
 
 class splitter : public pass {
   pass* out;
@@ -725,4 +718,19 @@ public:
 
 void read_csv(std::streambuf* in, pass& out);
 void read_csv(const char* filename, pass& out);
+
+}
+
+#ifdef use_unordered
+namespace std { namespace tr1 {
+template<> struct hash<table::cstring_queue>
+{
+  size_t operator()(const table::cstring_queue& arg) const { return arg.hash(); }
+};
+}}
+#endif
+
+
+#endif
+
 

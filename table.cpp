@@ -5,13 +5,15 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
-#include "csv.h"
+#include "table.h"
 
 using namespace std;
 #ifdef use_unordered
 using namespace std::tr1;
 #endif
 
+
+namespace table {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
@@ -1365,3 +1367,4 @@ void read_csv(const char* filename, pass& out)
   read_csv(&f, out);
 }
 
+}
