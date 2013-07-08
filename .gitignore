@@ -1,0 +1,7 @@
+*.o
+*.a
+table_cat_date
+table_cat_die
+table_stack
+table_test
+errors.err
