@@ -9,10 +9,10 @@ ARFLAGS = rcs
 
 .PHONY : all clean
 
-all : csv_cat_date csv_cat_die csv_stack csv_test libcsv.a
+all : table_cat_date table_cat_die table_stack table_test libtable.a
 
 clean :
-	@rm -f *.o csv_cat_date csv_cat_die csv_stack csv_split csv_test libcsv.a
+	@rm -f *.o table_cat_date table_cat_die table_stack table_split table_test libtable.a
 
 % : %.o
 	$(CPP) $+ $(LDFLAGS) -o $@
@@ -25,18 +25,18 @@ lib%.a : %.o
 	$(CPP) -c $(CPPFLAGS) $< -o $@
 
 
-csv.o : csv.h
-csv_cat_date.o : csv.h
-csv_cat_die.o : csv.h
-csv_stack.o : csv.h
-csv_split.o : csv.h
-csv_test.o : csv.h
+table.o : table.h
+table_cat_date.o : table.h
+table_cat_die.o : table.h
+table_stack.o : table.h
+table_split.o : table.h
+table_test.o : table.h
 
-csv_cat_date : csv.o
-csv_cat_die : csv.o
-csv_stack : csv.o
-csv_split : csv.o
-csv_test : csv.o
+table_cat_date : table.o
+table_cat_die : table.o
+table_stack : table.o
+table_split : table.o
+table_test : table.o
 
-libcsv.a :
+libtable.a :
 
