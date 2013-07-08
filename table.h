@@ -437,7 +437,7 @@ public:
 // row_joiner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class row_joiner  : public pass {
+class row_joiner : public pass {
   pass* out;
   std::vector<std::string> table_name;
   size_t table;
