@@ -1,3 +1,6 @@
+#ifndef table_h_
+#define table_h_
+
 #define use_unordered
 
 #include <string>
@@ -26,6 +29,7 @@ template<> struct hash<vector<string> >
   }
 };
 }}
+#endif
 
 
 namespace table {
