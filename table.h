@@ -684,33 +684,33 @@ public:
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class writer_base : public pass {
+class csv_writer_base : public pass {
 protected:
   bool first_column;
   std::streambuf* out;
 
-  writer_base() : out(0) {}
+  csv_writer_base() : out(0) {}
 
 public:
   void process_token(const char* token);
   void process_line();
 };
 
-class writer : public writer_base {
+class csv_writer : public csv_writer_base {
 public:
-  writer();
-  writer(std::streambuf* out);
+  csv_writer();
+  csv_writer(std::streambuf* out);
   void init(std::streambuf* out);
 
   void process_stream();
 };
 
-class file_writer : public writer_base {
+class csv_file_writer : public csv_writer_base {
 public:
-  file_writer();
-  file_writer(const char* filename);
+  csv_file_writer();
+  csv_file_writer(const char* filename);
   void init(const char* filename);
-  ~file_writer();
+  ~csv_file_writer();
 
   void process_stream();
 };

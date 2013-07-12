@@ -84,7 +84,7 @@ int main(const unsigned int argc, char const * const argv[])
   int ret_val = 0;
 
   try {
-    file_writer w("data.csv");
+    csv_file_writer w("data.csv");
 
     //ordered_tee t(w, w2);
     //tee t(w, w2);

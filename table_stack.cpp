@@ -10,7 +10,7 @@ int main(const unsigned int argc, char const * const argv[])
   int ret_val = 0;
 
   try {
-    writer w(cout.rdbuf());
+    csv_writer w(cout.rdbuf());
     stacker s(w, ST_LEAVE);
 
     stack_action_e mode = ST_STACK;

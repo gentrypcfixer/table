@@ -1259,7 +1259,7 @@ void base_converter::process_stream() { out->process_stream(); }
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-void writer_base::process_token(const char* token)
+void csv_writer_base::process_token(const char* token)
 {
   if(!first_column) out->sputc(',');
   else {
@@ -1271,7 +1271,7 @@ void writer_base::process_token(const char* token)
     out->sputc(*p);
 }
 
-void writer_base::process_line()
+void csv_writer_base::process_line()
 {
   if(!out) throw runtime_error("writer has no out");
   out->sputc('\n');
@@ -1279,22 +1279,22 @@ void writer_base::process_line()
 }
 
 
-writer::writer() {}
-writer::writer(streambuf* out) { init(out); }
+csv_writer::csv_writer() {}
+csv_writer::csv_writer(streambuf* out) { init(out); }
 
-void writer::init(streambuf* out)
+void csv_writer::init(streambuf* out)
 {
   this->out = out;
   if(!out) throw runtime_error("writer::init null out");
   first_column = 1;
 }
 
-void writer::process_stream() {}
+void csv_writer::process_stream() {}
 
-file_writer::file_writer() {}
-file_writer::file_writer(const char* filename) { init(filename); }
+csv_file_writer::csv_file_writer() {}
+csv_file_writer::csv_file_writer(const char* filename) { init(filename); }
 
-void file_writer::init(const char* filename)
+void csv_file_writer::init(const char* filename)
 {
   if(!out) out = new filebuf;
   else ((filebuf*)out)->close();
@@ -1305,9 +1305,9 @@ void file_writer::init(const char* filename)
   first_column = 1;
 }
 
-file_writer::~file_writer() { delete out; }
+csv_file_writer::~csv_file_writer() { delete out; }
 
-void file_writer::process_stream() { ((filebuf*)out)->close(); }
+void csv_file_writer::process_stream() { ((filebuf*)out)->close(); }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
