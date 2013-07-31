@@ -276,16 +276,18 @@ summarizer_data_t::summarizer_data_t() :
   max(-numeric_limits<double>::infinity())
 {}
 
-summarizer::summarizer() : out(0), values(0) {}
-summarizer::summarizer(pass& out) : values(0){ init(out); }
+summarizer::summarizer() : values(0) { init(); }
+summarizer::summarizer(pass& out) : values(0) { init(out); }
 
-summarizer& summarizer::init(pass& out)
+summarizer& summarizer::init()
 {
-  this->out = &out;
+  this->out = 0;
   for(vector<pcrecpp::RE*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) delete (*gri);
   group_regexes.clear();
   for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) delete (*dri).first;
   data_regexes.clear();
+  for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) delete (*ei);
+  exception_regexes.clear();
   first_line = 1;
   column_flags.clear();
   num_data_columns = 0;
@@ -300,10 +302,14 @@ summarizer& summarizer::init(pass& out)
   return *this;
 }
 
+summarizer& summarizer::set_out(pass& out) { this->out = &out; return *this; }
+summarizer& summarizer::init(pass& out) { init(); return set_out(out); }
+
 summarizer::~summarizer()
 {
   for(vector<pcrecpp::RE*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) delete (*gri);
   for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) delete (*dri).first;
+  for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) delete (*ei);
   delete[] values;
   map<cstring_queue, summarizer_data_t*>::iterator i;
   while(data.end() != (i = data.begin())) {
@@ -317,6 +323,12 @@ summarizer& summarizer::add_group(const char* regex) { group_regexes.push_back(n
 summarizer& summarizer::add_data(const char* regex, uint32_t flags)
 {
   data_regexes.push_back(pair<pcrecpp::RE*, uint32_t>(new pcrecpp::RE(regex), flags & 0xFFFFFFFE));
+  return *this;
+}
+
+summarizer& summarizer::add_exception(const char* regex)
+{
+  exception_regexes.push_back(new pcrecpp::RE(regex));
   return *this;
 }
 
@@ -337,6 +349,12 @@ void summarizer::process_token(const char* token)
       for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri)
         if((*dri).first->FullMatch(token))
           flags |= (*dri).second;
+      for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
+        if((*ei)->FullMatch(token)) {
+          flags = 0;
+          break;
+        }
+      }
     }
 
     if(flags & SUM_MISSING) { stringstream ss; ss << "MISSING(" << token << ')'; out->process_token(ss.str().c_str()); }
@@ -357,8 +375,9 @@ void summarizer::process_token(const char* token)
     else if(flags) {
       *vi = numeric_limits<double>::quiet_NaN();
       if(token[0]) {
-        istringstream ss(token); ss >> *vi;
-        if(!ss) throw runtime_error("couldn't read value");
+        char* next = 0;
+        double val = strtod(token, &next);
+        if(!*next) *vi = val;
       }
       ++vi;
     }

@@ -34,6 +34,23 @@ template<> struct hash<vector<string> >
 
 namespace table {
 
+struct cstr_less {
+  bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
+};
+
+struct multi_cstr_less { //for multiple null terminated strings terminated by a END OF TEXT (number 3)
+  bool operator()(char* const& lhs, char* const& rhs) const {
+    const char* l = lhs;
+    const char* r = rhs;
+
+    while(*l == *r && *l != '\x03') { ++l; ++r; }
+
+    if(*l < *r) return 1;
+    return 0;
+  }
+};
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -299,6 +316,7 @@ class summarizer : public pass {
   pass* out;
   std::vector<pcrecpp::RE*> group_regexes;
   std::vector<std::pair<pcrecpp::RE*, uint32_t> > data_regexes;
+  std::vector<pcrecpp::RE*> exception_regexes;
 
   bool first_line;
   std::vector<uint32_t> column_flags;
@@ -313,11 +331,14 @@ class summarizer : public pass {
 public:
   summarizer();
   summarizer(pass& out);
+  summarizer& init();
+  summarizer& set_out(pass& out);
   summarizer& init(pass& out);
   ~summarizer();
 
   summarizer& add_group(const char* regex);
   summarizer& add_data(const char* regex, uint32_t flags);
+  summarizer& add_exception(const char* regex);
 
   void process_token(const char* token);
   void process_line();
