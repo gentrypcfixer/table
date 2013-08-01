@@ -15,6 +15,24 @@ using namespace std::tr1;
 
 namespace table {
 
+void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end)
+{
+  char* old = buf;
+  size_t size = next - buf;
+  size_t cap = end - buf;
+  size_t resize = resize_end ? end - *resize_end : 0;
+
+  size_t new_cap = cap * 2;
+  buf = new char[new_cap];
+  memcpy(buf, old, size);
+  delete[] old;
+
+  next = buf + size;
+  end = buf + new_cap;
+  if(resize_end) *resize_end = end - resize;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -576,12 +594,16 @@ void stacker::process_stream()
 // splitter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-splitter::splitter() : out(0) {}
+splitter::splitter() { init(); }
 splitter::splitter(pass& out, split_action_e default_action) { init(out, default_action); }
-splitter::~splitter() {}
 
-void splitter::re_init()
+splitter& splitter::init()
 {
+  this->out = 0;
+  this->default_action = SP_REMOVE;
+  keyword_actions.clear();
+  regex_actions.clear();
+
   first_line = 1;
   actions.clear();
   split_keys.clear();
@@ -593,19 +615,14 @@ void splitter::re_init()
 
   out_split_keys.clear();
   data.clear();
-}
-
-splitter& splitter::init(pass& out, split_action_e default_action)
-{
-  this->out = &out;
-  this->default_action = default_action;
-  keyword_actions.clear();
-  regex_actions.clear();
-
-  re_init();
 
   return *this;
 }
+
+splitter& splitter::init(pass& out, split_action_e default_action) { init(); set_out(out); return set_default_action(default_action); }
+splitter::~splitter() {}
+splitter& splitter::set_out(pass& out) { this->out = &out; return *this; }
+splitter& splitter::set_default_action(split_action_e default_action) { this->default_action = default_action; return *this; }
 
 splitter& splitter::add_action(bool regex, const char* key, split_action_e action)
 {
@@ -636,7 +653,9 @@ void splitter::process_token(const char* token)
     else if(action == SP_SPLIT) split_keys.push_back(token);
   }
   else {
-    if(actions[column] == SP_GROUP) group_tokens.push_back(token);
+    if(actions[column] == SP_GROUP) {
+      group_tokens.push_back(token);
+    }
     else if(actions[column] == SP_SPLIT_BY) split_by_tokens.push_back(token);
     else if(actions[column] == SP_SPLIT) split_tokens.push_back(token);
   }

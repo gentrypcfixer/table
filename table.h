@@ -34,6 +34,8 @@ template<> struct hash<vector<string> >
 
 namespace table {
 
+void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
+
 struct cstr_less {
   bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
 };
@@ -46,7 +48,29 @@ struct multi_cstr_less { //for multiple null terminated strings terminated by a 
     while(*l == *r && *l != '\x03') { ++l; ++r; }
 
     if(*l < *r) return 1;
+    else return 0;
+  }
+};
+
+struct multi_cstr_hash { //for multiple null terminated strings terminated by a END OF TEXT (number 3)
+  bool operator()(char* const& arg) const {
+    size_t ret_val = 0;
+
+    for(const char* p = arg; *p != '\x03'; ++p) { ret_val += *p; }
+
     return 0;
+  }
+};
+
+struct multi_cstr_equal_to { //for multiple null terminated strings terminated by a END OF TEXT (number 3)
+  bool operator()(char* const& lhs, char* const& rhs) const {
+    const char* l = lhs;
+    const char* r = rhs;
+
+    while(*l == *r && *l != '\x03') { ++l; ++r; }
+
+    if(*l == '\x03' && *r == '\x03') return 1;
+    else return 0;
   }
 };
 
@@ -432,6 +456,9 @@ class splitter : public pass {
   std::vector<std::string> split_keys;
 
   size_t column;
+  //char* group_tokens;
+  //char* group_tokens_next;
+  //char* group_tokens_end;
   std::vector<std::string> group_tokens;
   std::vector<std::string> split_by_tokens;
   std::vector<std::string> split_tokens;
@@ -446,10 +473,12 @@ class splitter : public pass {
 public:
   splitter();
   splitter(pass& out, split_action_e default_action);
+  splitter& init();
+  splitter& init(pass& out, split_action_e default_action);
   ~splitter();
 
-  void re_init();
-  splitter& init(pass& out, split_action_e default_action);
+  splitter& set_out(pass& out);
+  splitter& set_default_action(split_action_e default_action);
   splitter& add_action(bool regex, const char* key, split_action_e action);
 
   void process_token(const char* token);
