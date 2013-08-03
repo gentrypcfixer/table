@@ -16,22 +16,6 @@
 #include <pcrecpp.h>
 
 
-#ifdef use_unordered
-namespace std { namespace tr1 {
-template<> struct hash<vector<string> >
-{
-  hash<string> h;
-  size_t operator()(const vector<string>& arg) const {
-    stringstream ss;
-    for(vector<string>::const_iterator i = arg.begin(); i != arg.end(); ++i)
-      ss << *i;
-    return h(ss.str());
-  }
-};
-}}
-#endif
-
-
 namespace table {
 
 void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
@@ -53,12 +37,16 @@ struct multi_cstr_less { //for multiple null terminated strings terminated by a 
 };
 
 struct multi_cstr_hash { //for multiple null terminated strings terminated by a END OF TEXT (number 3)
-  bool operator()(char* const& arg) const {
-    size_t ret_val = 0;
+  size_t operator()(char* const& arg) const {
+    size_t ret_val = static_cast<size_t>(2166136261UL);
 
-    for(const char* p = arg; *p != '\x03'; ++p) { ret_val += *p; }
+    size_t temp = 0;
+    for(const char* p = arg; *p != '\x03'; ++p) {
+      temp = (temp << 8) | *p;
+      ret_val = (ret_val ^ temp) * 16777619UL;
+    }
 
-    return 0;
+    return ret_val;
   }
 };
 
@@ -190,13 +178,6 @@ public:
       if(len != olen || memcmp((*i).data->buf, (*j).data->buf, len)) return false;
     }
     return true;
-  }
-  size_t hash() const {
-    size_t r = 0;
-    for(std::vector<block_t>::const_iterator i = data->blocks.begin(); i != data->blocks.end(); ++i)
-      for(char* d = (*i).data->buf; d < (*i).data->next_write; ++d)
-        r += *d;
-    return r;
   }
 
   void set_default_cap(size_t cap) { default_block_cap = cap; }
@@ -456,18 +437,21 @@ class splitter : public pass {
   std::vector<std::string> split_keys;
 
   size_t column;
-  //char* group_tokens;
-  //char* group_tokens_next;
-  //char* group_tokens_end;
-  std::vector<std::string> group_tokens;
-  std::vector<std::string> split_by_tokens;
-  std::vector<std::string> split_tokens;
+  char* group_tokens;
+  char* group_tokens_next;
+  char* group_tokens_end;
+  char* split_by_tokens;
+  char* split_by_tokens_next;
+  char* split_by_tokens_end;
+  char* split_tokens;
+  char* split_tokens_next;
+  char* split_tokens_end;
 
-  std::map<std::string, size_t> out_split_keys;
+  std::map<char*, size_t, cstr_less> out_split_keys;
 #ifdef use_unordered
-  std::tr1::unordered_map<std::vector<std::string>, std::vector<std::string> > data;
+  std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data; //maybe convert second to cstr
 #else
-  std::map<std::vector<std::string>, std::vector<std::string> > data;
+  std::map<char*, std::vector<std::string>, multi_cstr_less> data;
 #endif
 
 public:
@@ -774,15 +758,6 @@ void read_csv(std::streambuf* in, pass& out);
 void read_csv(const char* filename, pass& out);
 
 }
-
-#ifdef use_unordered
-namespace std { namespace tr1 {
-template<> struct hash<table::cstring_queue>
-{
-  size_t operator()(const table::cstring_queue& arg) const { return arg.hash(); }
-};
-}}
-#endif
 
 
 #endif

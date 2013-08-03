@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <math.h>
 #include "table.h"
 
 using namespace std;
@@ -594,8 +595,8 @@ void stacker::process_stream()
 // splitter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-splitter::splitter() { init(); }
-splitter::splitter(pass& out, split_action_e default_action) { init(out, default_action); }
+splitter::splitter() : group_tokens(0), split_by_tokens(0), split_tokens(0) { init(); }
+splitter::splitter(pass& out, split_action_e default_action) : group_tokens(0), split_by_tokens(0), split_tokens(0)  { init(out, default_action); }
 
 splitter& splitter::init()
 {
@@ -609,18 +610,50 @@ splitter& splitter::init()
   split_keys.clear();
 
   column = 0;
-  group_tokens.clear();
-  split_by_tokens.clear();
-  split_tokens.clear();
+  delete[] group_tokens;
+  group_tokens = new char[2048];
+  group_tokens_next = group_tokens;
+  group_tokens_end = group_tokens + 2048;
+  delete[] split_by_tokens;
+  split_by_tokens = new char[2048];
+  split_by_tokens_next = split_by_tokens;
+  split_by_tokens_end = split_by_tokens + 2048;
+  delete[] split_tokens;
+  split_tokens = new char[2048];
+  split_tokens_next = split_tokens;
+  split_tokens_end = split_tokens + 2048;
 
+  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
+    delete[] (*i).first;
   out_split_keys.clear();
+#ifdef use_unordered
+  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
+#else
+  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
+#endif
+    delete[] (*i).first;
   data.clear();
 
   return *this;
 }
 
 splitter& splitter::init(pass& out, split_action_e default_action) { init(); set_out(out); return set_default_action(default_action); }
-splitter::~splitter() {}
+
+splitter::~splitter()
+{
+  delete[] group_tokens;
+  delete[] split_by_tokens;
+  delete[] split_tokens;
+  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
+    delete[] (*i).first;
+#ifdef use_unordered
+  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
+#else
+  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
+#endif
+    delete[] (*i).first;
+}
+
 splitter& splitter::set_out(pass& out) { this->out = &out; return *this; }
 splitter& splitter::set_default_action(split_action_e default_action) { this->default_action = default_action; return *this; }
 
@@ -654,10 +687,26 @@ void splitter::process_token(const char* token)
   }
   else {
     if(actions[column] == SP_GROUP) {
-      group_tokens.push_back(token);
+      for(const char* p = token; 1; ++p) {
+        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+        *group_tokens_next++ = *p;
+        if(!*p) break;
+      }
     }
-    else if(actions[column] == SP_SPLIT_BY) split_by_tokens.push_back(token);
-    else if(actions[column] == SP_SPLIT) split_tokens.push_back(token);
+    else if(actions[column] == SP_SPLIT_BY) {
+      for(const char* p = token; 1; ++p) {
+        if(split_by_tokens_next >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end);
+        *split_by_tokens_next++ = *p;
+        if(!*p) break;
+      }
+    }
+    else if(actions[column] == SP_SPLIT) {
+      for(const char* p = token; 1; ++p) {
+        if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
+        *split_tokens_next++ = *p;
+        if(!*p) break;
+      }
+    }
   }
 
   ++column;
@@ -670,26 +719,65 @@ void splitter::process_line()
     first_line = 0;
   }
   else {
-    vector<string>& values = data[group_tokens];
-    for(vector<string>::const_iterator ski = split_keys.begin(), sti = split_tokens.begin(); sti != split_tokens.end(); ++ski, ++sti) {
-      string key = (*ski);
-      for(vector<string>::const_iterator sbti = split_by_tokens.begin(); sbti != split_by_tokens.end(); ++sbti) {
-        key += ' ';
-        key += *sbti;
+    if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    *group_tokens_next++ = '\x03';
+    if(split_by_tokens_next >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end);
+    *split_by_tokens_next++ = '\x03';
+    if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
+    *split_tokens_next++ = '\x03';
+
+#ifdef use_unordered
+    unordered_map<char*, vector<std::string>, multi_cstr_hash, multi_cstr_equal_to>::iterator di = data.find(group_tokens);
+    if(di == data.end()) {
+      char* cpy = new char[group_tokens_next - group_tokens];
+      memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
+      di = data.insert(tr1::unordered_map<char*, vector<std::string>, multi_cstr_hash, multi_cstr_equal_to>::value_type(cpy, vector<string>())).first;
+    }
+#else
+    map<char*, std::vector<std::string>, multi_cstr_less>::iterator di = data.find(group_tokens);
+    if(di == data.end()) {
+      char* cpy = new char[group_tokens_next - group_tokens];
+      memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
+      di = data.insert(map<char*, vector<std::string>, multi_cstr_less>::value_type(cpy, vector<string>())).first;
+    }
+#endif
+    vector<string>& values = (*di).second;
+    vector<string>::const_iterator ski = split_keys.begin();
+    for(char* stp = split_tokens; *stp != '\x03'; ++ski, ++stp) {
+      group_tokens_next = group_tokens;
+      for(const char* p = (*ski).c_str(); *p; ++p) {
+        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+        *group_tokens_next++ = *p;
+      }
+      *group_tokens_next++ = ' ';
+      size_t sk_len = group_tokens_next - group_tokens;
+      for(char* sbtp = split_by_tokens; *sbtp != '\x03'; ++sbtp) {
+        group_tokens_next = group_tokens + sk_len;
+        for(; 1; ++sbtp) {
+          if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+          *group_tokens_next++ = *sbtp;
+          if(!*sbtp) break;
+        }
       }
 
-      map<string, size_t>::iterator i = out_split_keys.find(key);
-      if(i == out_split_keys.end()) i = out_split_keys.insert(map<string, size_t>::value_type(key, out_split_keys.size())).first;
+      map<char*, size_t, cstr_less>::iterator i = out_split_keys.find(group_tokens);
+      if(i == out_split_keys.end()) {
+        char* cpy = new char[group_tokens_next - group_tokens];
+        memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
+        i = out_split_keys.insert(map<char*, size_t, cstr_less>::value_type(cpy, out_split_keys.size())).first;
+      }
       const size_t& index = (*i).second;
       if(index >= values.size()) values.resize(index + 1);
-      values[index] = (*sti);
+      values[index] = stp;
+
+      while(*stp) ++stp;
     }
   }
 
   column = 0;
-  group_tokens.clear();
-  split_by_tokens.clear();
-  split_tokens.clear();
+  group_tokens_next = group_tokens;
+  split_by_tokens_next = split_by_tokens;
+  split_tokens_next = split_tokens;
 }
 
 void splitter::process_stream()
@@ -699,28 +787,44 @@ void splitter::process_stream()
   for(vector<string>::const_iterator i = group_keys.begin(); i != group_keys.end(); ++i)
     out->process_token((*i).c_str());
   {
-    vector<string> osk(out_split_keys.size());
-    for(map<string, size_t>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
+    vector<char*> osk(out_split_keys.size());
+    for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
       osk[(*i).second] = (*i).first;
-    for(vector<string>::const_iterator i = osk.begin(); i != osk.end(); ++i)
-      out->process_token((*i).c_str());
+    for(vector<char*>::const_iterator i = osk.begin(); i != osk.end(); ++i)
+      out->process_token(*i);
   }
   out->process_line();
 
+  map<char*, size_t, cstr_less>::size_type num_out_split_keys = out_split_keys.size();
+  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
+    delete[] (*i).first;
+  out_split_keys.clear();
+
 #ifdef use_unordered
-  for(unordered_map<vector<string>, vector<string> >::const_iterator i = data.begin(); i != data.end(); ++i) {
+  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i) {
 #else
-  for(map<vector<string>, vector<string> >::const_iterator i = data.begin(); i != data.end(); ++i) {
+  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i) {
 #endif
-    for(vector<string>::const_iterator j = (*i).first.begin(); j != (*i).first.end(); ++j)
-      out->process_token((*j).c_str());
+    for(char* p = (*i).first; *p != '\x03'; ++p) {
+      out->process_token(p);
+      while(*p) ++p;
+    }
     size_t tokens = 0;
     for(vector<string>::const_iterator j = (*i).second.begin(); j != (*i).second.end(); ++j, ++tokens)
       out->process_token((*j).c_str());
-    while(tokens++ < out_split_keys.size())
+    while(tokens++ < num_out_split_keys)
       out->process_token("");
     out->process_line();
   }
+
+#ifdef use_unordered
+  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
+#else
+  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
+#endif
+    delete[] (*i).first;
+  data.clear();
+
   out->process_stream();
 }
 
