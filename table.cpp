@@ -1270,8 +1270,8 @@ void differ::process_token(const char* token)
     else if(token == comp_key) comp_column = column;
   }
   else {
-    if(column == base_column) { istringstream ss(token); ss >> base_value; if(!ss) blank = 1; }
-    else if(column == comp_column) { istringstream ss(token); ss >> comp_value; if(!ss) blank = 1; }
+    if(column == base_column) { char* next = 0; base_value = strtod(token, &next); if(next == token || *next) blank = 1; }
+    else if(column == comp_column) { char* next = 0; comp_value = strtod(token, &next); if(next == token || *next) blank = 1; }
   }
   out->process_token(token);
 
@@ -1290,8 +1290,9 @@ void differ::process_line()
   else {
     if(blank) out->process_token("");
     else {
-      stringstream ss; ss << comp_value - base_value;
-      out->process_token(ss.str().c_str());
+      char buf[32];
+      sprintf(buf, "%f", comp_value - base_value);
+      out->process_token(buf);
     }
   }
   out->process_line();
