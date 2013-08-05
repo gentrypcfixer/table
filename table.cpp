@@ -625,13 +625,11 @@ splitter& splitter::init()
 
   for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
     delete[] (*i).first;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
+    delete[] *i;
+  group_storage_next = 0;
+  group_storage_end = 0;
   out_split_keys.clear();
-#ifdef use_unordered
-  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
-#else
-  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
-#endif
-    delete[] (*i).first;
   data.clear();
 
   return *this;
@@ -646,12 +644,8 @@ splitter::~splitter()
   delete[] split_tokens;
   for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
     delete[] (*i).first;
-#ifdef use_unordered
-  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
-#else
-  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
-#endif
-    delete[] (*i).first;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
+    delete[] *i;
 }
 
 splitter& splitter::set_out(pass& out) { this->out = &out; return *this; }
@@ -726,21 +720,21 @@ void splitter::process_line()
     if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
     *split_tokens_next++ = '\x03';
 
-#ifdef use_unordered
-    unordered_map<char*, vector<std::string>, multi_cstr_hash, multi_cstr_equal_to>::iterator di = data.find(group_tokens);
+    data_t::iterator di = data.find(group_tokens);
     if(di == data.end()) {
-      char* cpy = new char[group_tokens_next - group_tokens];
-      memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
-      di = data.insert(tr1::unordered_map<char*, vector<std::string>, multi_cstr_hash, multi_cstr_equal_to>::value_type(cpy, vector<string>())).first;
+      size_t len = group_tokens_next - group_tokens;
+      if(len + 1 > size_t(group_storage_end - group_storage_next)) {
+        if(group_storage_next) *group_storage_next++ = '\x04';
+        size_t cap = 256 * 1024;
+        if(cap < len + 1) cap = len + 1;
+        group_storage.push_back(new char[cap]);
+        group_storage_next = group_storage.back();
+        group_storage_end = group_storage.back() + cap;
+      }
+      memcpy(group_storage_next, group_tokens, len);
+      di = data.insert(data_t::value_type(group_storage_next, vector<string>())).first;
+      group_storage_next += len;
     }
-#else
-    map<char*, std::vector<std::string>, multi_cstr_less>::iterator di = data.find(group_tokens);
-    if(di == data.end()) {
-      char* cpy = new char[group_tokens_next - group_tokens];
-      memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
-      di = data.insert(map<char*, vector<std::string>, multi_cstr_less>::value_type(cpy, vector<string>())).first;
-    }
-#endif
     vector<string>& values = (*di).second;
     vector<string>::const_iterator ski = split_keys.begin();
     for(char* stp = split_tokens; *stp != '\x03'; ++ski, ++stp) {
@@ -800,11 +794,7 @@ void splitter::process_stream()
     delete[] (*i).first;
   out_split_keys.clear();
 
-#ifdef use_unordered
-  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i) {
-#else
-  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i) {
-#endif
+  for(data_t::const_iterator i = data.begin(); i != data.end(); ++i) {
     for(char* p = (*i).first; *p != '\x03'; ++p) {
       out->process_token(p);
       while(*p) ++p;
@@ -817,12 +807,9 @@ void splitter::process_stream()
     out->process_line();
   }
 
-#ifdef use_unordered
-  for(unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to>::const_iterator i = data.begin(); i != data.end(); ++i)
-#else
-  for(map<char*, vector<string>, multi_cstr_less>::const_iterator i = data.begin(); i != data.end(); ++i)
-#endif
-    delete[] (*i).first;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
+    delete[] *i;
+  group_storage.clear();
   data.clear();
 
   out->process_stream();

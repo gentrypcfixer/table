@@ -448,11 +448,15 @@ class splitter : public pass {
   char* split_tokens_end;
 
   std::map<char*, size_t, cstr_less> out_split_keys;
+  std::vector<char*> group_storage;
+  char* group_storage_next;
+  char* group_storage_end;
 #ifdef use_unordered
-  std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data; //maybe convert second to cstr
+  typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
 #else
-  std::map<char*, std::vector<std::string>, multi_cstr_less> data;
+  typedef std::map<char*, std::vector<std::string>, multi_cstr_less> data_t;
 #endif
+  data_t data;
 
 public:
   splitter();
