@@ -1454,16 +1454,18 @@ void read_csv(streambuf* in, pass& out)
   int num_keys = 0;
   int column = 0;
   bool blank = 1;
-  size_t token_cap = 4096;
-  size_t token_size = 0;
-  char* token = new char[token_cap];
-  int c = '\0';
-  while(char_traits<char>::eof() != (c = in->sbumpc())) {
-    if(c == '\n') {
+  char* buf = new char[4096];
+  char* next = buf;
+  char* end = buf + 4096;
+  while(1) {
+    int c = in->sbumpc();
+    if(char_traits<char>::eof() == c) break;
+    else if(c == '\n') {
       if(!blank) {
-        token[token_size] = '\0';
-        out.process_token(token);
-        token_size = 0;
+        if(next >= end) resize_buffer(buf, next, end);
+        *next++ = '\0';
+        out.process_token(buf);
+        next = buf;
         ++column;
         if(first_line) { num_keys = column; first_line = 0; }
         else if(column != num_keys) throw runtime_error("didn't get same number of tokens as first line");
@@ -1473,26 +1475,21 @@ void read_csv(streambuf* in, pass& out)
       }
     }
     else if(c == ',') {
-      token[token_size] = '\0';
-      out.process_token(token);
-      token_size = 0;
+      if(next >= end) resize_buffer(buf, next, end);
+      *next++ = '\0';
+      out.process_token(buf);
+      next = buf;
       ++column;
       blank = 0;
     }
     else {
-      token[token_size++] = c;
-      if(token_size >= token_cap) {
-        char* old = token;
-        token_cap *= 2;
-        token = new char[token_cap];
-        memcpy(token, old, token_size);
-        delete[] old;
-      }
+      if(next >= end) resize_buffer(buf, next, end);
+      *next++ = c;
       blank = 0;
     }
   }
   out.process_stream();
-  delete[] token;
+  delete[] buf;
 }
 
 void read_csv(const char* filename, pass& out)
