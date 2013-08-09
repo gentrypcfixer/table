@@ -11,12 +11,12 @@
 using namespace std;
 using namespace pcrecpp;
 
-int main(const unsigned int argc, char const * const argv[])
+int main(int argc, char * argv[])
 {
   int ret_val = 0;
   char const* out_dir = ".";
 
-  for(unsigned int arg = 1; arg < argc; ++arg) {
+  for(int arg = 1; arg < argc; ++arg) {
     if('-' == argv[arg][0]) {
       if('o' == argv[arg][1]) {
         out_dir = argv[++arg];

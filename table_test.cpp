@@ -1,5 +1,6 @@
 #include <iostream>
 #include <stdexcept>
+#include <algorithm>
 #include "table.h"
 
 using namespace std;
@@ -79,7 +80,7 @@ void calculator::process_line()
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-int main(const unsigned int argc, char const * const argv[])
+int main(int argc, char * argv[])
 {
   int ret_val = 0;
 

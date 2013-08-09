@@ -4,6 +4,8 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <limits>
+#include <algorithm>
 #include <stdexcept>
 #include <math.h>
 #include "table.h"

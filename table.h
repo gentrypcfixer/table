@@ -14,6 +14,7 @@
 #include <iostream>
 #include <sstream>
 #include <pcrecpp.h>
+#include <stdint.h>
 
 
 namespace table {
@@ -279,7 +280,7 @@ class ordered_tee : public pass {
 
 public:
   ordered_tee();
-  ordered_tee(pass& out1, pass& out1);
+  ordered_tee(pass& out1, pass& out2);
   ~ordered_tee();
   void init(pass& out1, pass& out2);
   void add_out(pass& out);
