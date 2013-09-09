@@ -96,18 +96,32 @@ int main(int argc, char * argv[])
     //filter f(d2);
     //f.add(1, "data.*", 0.0, 30000.0);
 
-    splitter sp(w, SP_REMOVE);
-    sp.add_action(0, "LOT", SP_GROUP);
-    sp.add_action(0, "WAFER", SP_GROUP);
-    sp.add_action(0, "ROW", SP_GROUP);
-    sp.add_action(0, "COL", SP_GROUP);
-    sp.add_action(0, "keyword", SP_GROUP);
-    sp.add_action(0, "Group", SP_SPLIT_BY);
-    sp.add_action(0, "data", SP_SPLIT);
-    sp.add_action(0, "Fail_bin", SP_SPLIT);
-    sp.add_action(0, "Error_bin", SP_SPLIT);
+    summarizer su(w);
+    su.add_group("^LOT$");
+    su.add_group("^WAFER$");
+    su.add_exception("^ROW$");
+    su.add_exception("^COL$");
+    su.add_exception("^WAFSIZE$");
+    su.add_exception("^Process_id$");
+    su.add_exception("^Fail_bin$");
+    su.add_exception("^Error_bin$");
+    su.add_group("^Group$");
+    su.add_exception("^MAP_REV$");
+    su.add_group("^keyword$");
+    su.add_data(".*", SUM_AVG);
 
-    stacker st(sp, ST_STACK);
+    //splitter sp(w, SP_REMOVE);
+    //sp.add_action(0, "LOT", SP_GROUP);
+    //sp.add_action(0, "WAFER", SP_GROUP);
+    //sp.add_action(0, "ROW", SP_GROUP);
+    //sp.add_action(0, "COL", SP_GROUP);
+    //sp.add_action(0, "keyword", SP_GROUP);
+    //sp.add_action(0, "Group", SP_SPLIT_BY);
+    //sp.add_action(0, "data", SP_SPLIT);
+    //sp.add_action(0, "Fail_bin", SP_SPLIT);
+    //sp.add_action(0, "Error_bin", SP_SPLIT);
+
+    stacker st(su, ST_STACK);
     st.add_action(0, "LOT", ST_LEAVE);
     st.add_action(0, "WAFER", ST_LEAVE);
     st.add_action(0, "ROW", ST_LEAVE);
@@ -117,17 +131,12 @@ int main(int argc, char * argv[])
     st.add_action(0, "Fail_bin", ST_LEAVE);
     st.add_action(0, "Error_bin", ST_LEAVE);
     st.add_action(0, "Group", ST_LEAVE);
+    st.add_action(0, "MAP_REV", ST_LEAVE);
 
     //calculator ca(st);
 
     //combiner c(st);
     //c.add_pair("RE_RWB_TTT_(.*)", "RWB_\\1");
-
-    //summarizer su(w);
-    //su.add_group("LOT");
-    //su.add_group("WAFER");
-    //su.add_group("Group");
-    //su.add_data("WLSV_SLC.*", SUM_AVG);
 
     //subset_tee s(w);
     //s.add_data(1, ".*");
@@ -140,9 +149,9 @@ int main(int argc, char * argv[])
 
     //base_converter bc(s, "PGM_OTP.*", 16, 10);
 
-    col_pruner cp(st);
+    //col_pruner cp(st);
 
-    read_csv("raw.csv", cp);
+    read_csv("raw.csv", st);
 
     //row_joiner rj(w);
 

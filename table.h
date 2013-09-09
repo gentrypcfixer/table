@@ -13,6 +13,7 @@
 #include <vector>
 #include <iostream>
 #include <sstream>
+#include <pcre.h>
 #include <pcrecpp.h>
 #include <stdint.h>
 
@@ -320,19 +321,29 @@ struct summarizer_data_t
 
 class summarizer : public pass {
   pass* out;
-  std::vector<pcrecpp::RE*> group_regexes;
-  std::vector<std::pair<pcrecpp::RE*, uint32_t> > data_regexes;
-  std::vector<pcrecpp::RE*> exception_regexes;
+  std::vector<pcre*> group_regexes;
+  std::vector<std::pair<pcre*, uint32_t> > data_regexes;
+  std::vector<pcre*> exception_regexes;
 
   bool first_line;
   std::vector<uint32_t> column_flags;
   int num_data_columns;
 
   std::vector<uint32_t>::const_iterator cfi;
-  cstring_queue group_tokens;
   double* values;
   double* vi;
-  std::map<cstring_queue, summarizer_data_t*> data;
+  char* group_tokens;
+  char* group_tokens_next;
+  char* group_tokens_end;
+
+  std::vector<char*> group_storage;
+  char* group_storage_next;
+  char* group_storage_end;
+  std::vector<summarizer_data_t*> data_storage;
+  summarizer_data_t* data_storage_next;
+  summarizer_data_t* data_storage_end;
+  typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  data_t data;
 
 public:
   summarizer();

@@ -297,28 +297,32 @@ summarizer_data_t::summarizer_data_t() :
   max(-numeric_limits<double>::infinity())
 {}
 
-summarizer::summarizer() : values(0) { init(); }
-summarizer::summarizer(pass& out) : values(0) { init(out); }
+summarizer::summarizer() : values(0), group_tokens(0) { init(); }
+summarizer::summarizer(pass& out) : values(0), group_tokens(0) { init(out); }
 
 summarizer& summarizer::init()
 {
   this->out = 0;
-  for(vector<pcrecpp::RE*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) delete (*gri);
+  for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) pcre_free(*gri);
   group_regexes.clear();
-  for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) delete (*dri).first;
+  for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) pcre_free((*dri).first);
   data_regexes.clear();
-  for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) delete (*ei);
+  for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) pcre_free(*ei);
   exception_regexes.clear();
   first_line = 1;
   column_flags.clear();
   num_data_columns = 0;
-  group_tokens.clear();
   delete[] values; values = 0;
-  map<cstring_queue, summarizer_data_t*>::iterator i;
-  while(data.end() != (i = data.begin())) {
-    delete[] (*i).second;
-    data.erase(i);
-  }
+  delete[] group_tokens; group_tokens = new char[2048];
+  group_tokens_next = group_tokens;
+  group_tokens_end = group_tokens + 2048;
+  for(vector<char*>::iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
+  group_storage.clear();
+  group_storage_next = 0;
+  for(vector<summarizer_data_t*>::iterator i = data_storage.begin(); i != data_storage.end(); ++i) delete[] *i;
+  data_storage.clear();
+  data_storage_next = 0;
+  data.clear();
 
   return *this;
 }
@@ -328,28 +332,36 @@ summarizer& summarizer::init(pass& out) { init(); return set_out(out); }
 
 summarizer::~summarizer()
 {
-  for(vector<pcrecpp::RE*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) delete (*gri);
-  for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) delete (*dri).first;
-  for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) delete (*ei);
+  for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) pcre_free(*gri);
+  for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) pcre_free((*dri).first);
+  for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) pcre_free(*ei);
   delete[] values;
-  map<cstring_queue, summarizer_data_t*>::iterator i;
-  while(data.end() != (i = data.begin())) {
-    delete[] (*i).second;
-    data.erase(i);
-  }
+  delete[] group_tokens;
+  for(vector<char*>::iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
+  for(vector<summarizer_data_t*>::iterator i = data_storage.begin(); i != data_storage.end(); ++i) delete[] *i;
 }
 
-summarizer& summarizer::add_group(const char* regex) { group_regexes.push_back(new pcrecpp::RE(regex)); return *this; }
+summarizer& summarizer::add_group(const char* regex)
+{
+  const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("summarizer can't compile group regex");
+  group_regexes.push_back(p);
+  return *this;
+}
 
 summarizer& summarizer::add_data(const char* regex, uint32_t flags)
 {
-  data_regexes.push_back(pair<pcrecpp::RE*, uint32_t>(new pcrecpp::RE(regex), flags & 0xFFFFFFFE));
+  const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("summarizer can't compile data regex");
+  data_regexes.push_back(pair<pcre*, uint32_t>(p, flags & 0xFFFFFFFE));
   return *this;
 }
 
 summarizer& summarizer::add_exception(const char* regex)
 {
-  exception_regexes.push_back(new pcrecpp::RE(regex));
+  const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("summarizer can't compile exception regex");
+  exception_regexes.push_back(p);
   return *this;
 }
 
@@ -358,48 +370,90 @@ void summarizer::process_token(const char* token)
   if(first_line) {
     if(!out) throw runtime_error("summarizer has no out");
 
+    size_t len = strlen(token);
     uint32_t flags = 0;
-    for(vector<pcrecpp::RE*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
-      if((*gri)->FullMatch(token)) {
-        out->process_token(token);
-        flags = 1;
-        break;
-      }
+    for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
+      int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { out->process_token(token); flags = 1; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
     }
     if(!flags) {
-      for(vector<pair<pcrecpp::RE*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri)
-        if((*dri).first->FullMatch(token))
-          flags |= (*dri).second;
-      for(vector<pcrecpp::RE*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
-        if((*ei)->FullMatch(token)) {
-          flags = 0;
-          break;
-        }
+      for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
+        int ovector[30]; int rc = pcre_exec((*dri).first, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { flags |= (*dri).second; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+      }
+      for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
+        int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { flags = 0; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
       }
     }
 
-    if(flags & SUM_MISSING) { stringstream ss; ss << "MISSING(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_COUNT) { stringstream ss; ss << "COUNT(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_SUM) { stringstream ss; ss << "SUM(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_MIN) { stringstream ss; ss << "MIN(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_MAX) { stringstream ss; ss << "MAX(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_AVG) { stringstream ss; ss << "AVG(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_VARIANCE) { stringstream ss; ss << "VARIANCE(" << token << ')'; out->process_token(ss.str().c_str()); }
-    if(flags & SUM_STD_DEV) { stringstream ss; ss << "STD_DEV(" << token << ')'; out->process_token(ss.str().c_str()); }
+    if(flags & SUM_MISSING) {
+      if(group_tokens_next + len + 9 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "MISSING(", 8); group_tokens_next += 8;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_COUNT) {
+      if(group_tokens_next + len + 7 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "COUNT(", 6); group_tokens_next += 6;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_SUM) {
+      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "SUM(", 4); group_tokens_next += 4;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_MIN) {
+      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "MIN(", 4); group_tokens_next += 4;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_MAX) {
+      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "MAX(", 4); group_tokens_next += 4;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_AVG) {
+      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "AVG(", 4); group_tokens_next += 4;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_VARIANCE) {
+      if(group_tokens_next + len + 10 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "VARIANCE(", 9); group_tokens_next += 9;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
+    if(flags & SUM_STD_DEV) {
+      if(group_tokens_next + len + 9 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      memcpy(group_tokens_next, "STD_DEV(", 8); group_tokens_next += 8;
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+    }
 
     column_flags.push_back(flags);
     if(flags & 0xFFFFFFFE) ++num_data_columns;
   }
   else {
     const uint32_t& flags = *cfi;
-    if(flags & 1) { group_tokens.push(token); }
-    else if(flags) {
-      *vi = numeric_limits<double>::quiet_NaN();
-      if(token[0]) {
-        char* next = 0;
-        double val = strtod(token, &next);
-        if(!*next) *vi = val;
+    if(flags & 1) {
+      for(const char* p = token; 1; ++p) {
+        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+        *group_tokens_next++ = *p;
+        if(!*p) break;
       }
+    }
+    else if(flags) {
+      char* next; *vi = strtod(token, &next);
+      if(next == token) *vi = numeric_limits<double>::quiet_NaN();
       ++vi;
     }
     ++cfi;
@@ -409,19 +463,39 @@ void summarizer::process_token(const char* token)
 void summarizer::process_line()
 {
   if(first_line) {
-    cfi = column_flags.begin();
-    values = new double[num_data_columns];
-    vi = values;
+    for(char* p = group_tokens; p < group_tokens_next; ++p) {
+      out->process_token(p);
+      while(*p) ++p;
+    }
     out->process_line();
     first_line = 0;
+    values = new double[num_data_columns];
   }
   else {
-    //for(cstring_queue::const_iterator gti = group_tokens.begin(); gti != group_tokens.end(); ++gti)
-    //  cout << ' ' << *gti;
-    //cout << endl;
-    map<cstring_queue, summarizer_data_t*>::iterator i = data.find(group_tokens);
+    if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    *group_tokens_next++ = '\x03';
+    data_t::iterator i = data.find(group_tokens);
     if(i == data.end()) {
-      i = data.insert(map<cstring_queue, summarizer_data_t*>::value_type(group_tokens, new summarizer_data_t[num_data_columns])).first;
+      size_t len = group_tokens_next - group_tokens;
+      if(!group_storage_next || len >= size_t(group_storage_end - group_storage_next)) {
+        if(group_storage_next) *group_storage_next++ = '\04';
+        size_t cap = 256 * 1024;
+        if(cap < len + 1) cap = len + 1;
+        group_storage.push_back(new char[cap]);
+        group_storage_next = group_storage.back();
+        group_storage_end = group_storage.back() + cap;
+      }
+      memcpy(group_storage_next, group_tokens, len);
+      if(!data_storage_next || num_data_columns > size_t(data_storage_end - data_storage_next)) {
+        size_t rows = (256 * 1024) / (sizeof(summarizer_data_t) * num_data_columns);
+        if(!rows) rows = 1;
+        data_storage.push_back(new summarizer_data_t[rows * num_data_columns]);
+        data_storage_next = data_storage.back();
+        data_storage_end = data_storage.back() + (rows * num_data_columns);
+      }
+      i = data.insert(data_t::value_type(group_storage_next, data_storage_next)).first;
+      group_storage_next += len;
+      data_storage_next += num_data_columns;
     }
     vi = values;
     for(int c = 0; c < num_data_columns; ++c, ++vi) {
@@ -435,49 +509,67 @@ void summarizer::process_line()
         else if(*vi > d.max) d.max = *vi;
       }
     }
-    cfi = column_flags.begin();
-    group_tokens.clear();
-    vi = values;
   }
+
+  cfi = column_flags.begin();
+  vi = values;
+  group_tokens_next = group_tokens;
 }
 
 void summarizer::process_stream()
 {
   if(!out) throw runtime_error("summarizer has no out");
 
-  map<cstring_queue, summarizer_data_t*>::iterator di;
-  while(data.end() != (di = data.begin())) {
-    for(cstring_queue::const_iterator gti = (*di).first.begin(); gti != (*di).first.end(); ++gti)
-      out->process_token(*gti);
+  *group_storage_next++ = '\x04';
+  data.clear();
 
-    summarizer_data_t* d = (*di).second;
+  size_t data_rows_per_storage = (256 * 1024) / (sizeof(summarizer_data_t) * num_data_columns);
+  if(!data_rows_per_storage) data_rows_per_storage = 1;
+
+  size_t row = 0;
+  vector<char*>::const_iterator gsi = group_storage.begin();
+  char* g = (gsi == group_storage.end()) ? 0 : *gsi;
+  vector<summarizer_data_t*>::const_iterator dsi = data_storage.begin();
+  summarizer_data_t* d = (dsi == data_storage.end()) ? 0 : *dsi;
+  while(g && d) {
+    while(*g != '\x03') { out->process_token(g); while(*g) ++g; ++g; }
+    ++g;
+    if(*g == '\x04') { delete[] *gsi; ++gsi; g = (gsi == group_storage.end()) ? 0 : *gsi; }
+
     for(cfi = column_flags.begin(); cfi != column_flags.end(); ++cfi) {
       if(!((*cfi) & 0xFFFFFFFE)) continue;
 
-      if((*cfi) & SUM_MISSING) { stringstream ss; ss << (*d).missing; out->process_token(ss.str().c_str()); }
-      if((*cfi) & SUM_COUNT) { stringstream ss; ss << (*d).count; out->process_token(ss.str().c_str()); }
-      if((*cfi) & SUM_SUM) { stringstream ss; ss << (*d).sum; out->process_token(ss.str().c_str()); }
-      if((*cfi) & SUM_MIN) { stringstream ss; ss << (*d).min; out->process_token(ss.str().c_str()); }
-      if((*cfi) & SUM_MAX) { stringstream ss; ss << (*d).max; out->process_token(ss.str().c_str()); }
-      if((*cfi) & SUM_AVG) { stringstream ss; ss << ((*d).sum / (*d).count); out->process_token(ss.str().c_str()); }
+      if((*cfi) & SUM_MISSING) { sprintf(group_tokens, "%d", (*d).missing); out->process_token(group_tokens); }
+      if((*cfi) & SUM_COUNT) { sprintf(group_tokens, "%d", (*d).count); out->process_token(group_tokens); }
+      if((*cfi) & SUM_SUM) { sprintf(group_tokens, "%f", (*d).sum); out->process_token(group_tokens); }
+      if((*cfi) & SUM_MIN) { sprintf(group_tokens, "%f", (*d).min); out->process_token(group_tokens); }
+      if((*cfi) & SUM_MAX) { sprintf(group_tokens, "%f", (*d).max); out->process_token(group_tokens); }
+      if((*cfi) & SUM_AVG) {
+        if(!(*d).count) { out->process_token(""); }
+        else { sprintf(group_tokens, "%f", ((*d).sum / (*d).count)); out->process_token(group_tokens); }
+      }
       if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
         double v = 0.0;
         if((*d).count > 1) {
           v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
           v /= (*d).count - 1;
         }
-        if((*cfi) & SUM_VARIANCE) { stringstream ss; ss << v; out->process_token(ss.str().c_str()); }
-        if((*cfi) & SUM_STD_DEV) { stringstream ss; ss << sqrt(v); out->process_token(ss.str().c_str()); }
+        if((*cfi) & SUM_VARIANCE) { sprintf(group_tokens, "%f", v); out->process_token(group_tokens); }
+        if((*cfi) & SUM_STD_DEV) { sprintf(group_tokens, "%f", sqrt(v)); out->process_token(group_tokens); }
       }
-
       ++d;
+    }
+    if((++row % data_rows_per_storage) == (data_rows_per_storage - 1)) {
+      delete[] *dsi; ++dsi; d = (dsi == data_storage.end()) ? 0 : *dsi;
     }
 
     out->process_line();
-
-    delete[] (*di).second;
-    data.erase(di);
   }
+
+  for(; gsi != group_storage.end(); ++gsi) delete[] *gsi;
+  group_storage.clear();
+  for(; dsi != data_storage.end(); ++dsi) delete[] *dsi;
+  data_storage.clear();
 
   out->process_stream();
 }
