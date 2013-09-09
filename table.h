@@ -239,8 +239,8 @@ struct subset_tee_dest_data_t
 {
   std::set<std::string> key;
   std::set<std::string> key_except;
-  std::vector<pcrecpp::RE*> regex;
-  std::vector<pcrecpp::RE*> regex_except;
+  std::vector<pcre*> regex;
+  std::vector<pcre*> regex_except;
   bool has_data;
 
   subset_tee_dest_data_t() : has_data(0) {}
@@ -258,7 +258,8 @@ class subset_tee : public pass {
 public:
   subset_tee();
   subset_tee(pass& dest);
-  void init(pass& dest);
+  subset_tee& init();
+  subset_tee& init(pass& dest);
   subset_tee& set_dest(pass& dest);
   subset_tee& add_data(bool regex, const char* key);
   subset_tee& add_exception(bool regex, const char* key);

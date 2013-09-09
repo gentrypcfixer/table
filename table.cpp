@@ -118,28 +118,34 @@ pass::~pass() {}
 
 subset_tee_dest_data_t::~subset_tee_dest_data_t()
 {
-  for(vector<pcrecpp::RE*>::iterator i = regex.begin(); i != regex.end(); ++i) delete (*i);
-  for(vector<pcrecpp::RE*>::iterator i = regex_except.begin(); i != regex_except.end(); ++i) delete (*i);
+  for(vector<pcre*>::iterator i = regex.begin(); i != regex.end(); ++i) pcre_free(*i);
+  for(vector<pcre*>::iterator i = regex_except.begin(); i != regex_except.end(); ++i) pcre_free(*i);
 }
 
-subset_tee::subset_tee() : ddi(dest_data.end()) {}
+subset_tee::subset_tee() { init(); }
 subset_tee::subset_tee(pass& dest) { init(dest); }
 
-void subset_tee::init(pass& dest) {
+subset_tee& subset_tee::init() {
   dest_data.clear();
+  ddi = dest_data.end();
   first_row = 1;
   column = 0;
   this->dest.clear();
-  set_dest(dest);
+  return *this;
 }
 
+subset_tee& subset_tee::init(pass& dest) { init(); return set_dest(dest); }
 subset_tee& subset_tee::set_dest(pass& dest) { ddi = dest_data.insert(map<pass*, subset_tee_dest_data_t>::value_type(&dest, subset_tee_dest_data_t())).first; return *this; }
 
 subset_tee& subset_tee::add_data(bool regex, const char* key)
 {
   if(ddi == dest_data.end()) throw runtime_error("no current destination");
 
-  if(regex) (*ddi).second.regex.push_back(new pcrecpp::RE(key));
+  if(regex) {
+    const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("subset_tee can't compile data regex");
+    (*ddi).second.regex.push_back(p);
+  }
   else (*ddi).second.key.insert(key);
 
   return *this;
@@ -149,7 +155,11 @@ subset_tee& subset_tee::add_exception(bool regex, const char* key)
 {
   if(ddi == dest_data.end()) throw runtime_error("no current destination");
 
-  if(regex) (*ddi).second.regex_except.push_back(new pcrecpp::RE(key));
+  if(regex) {
+    const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("subset_tee can't compile exception regex");
+    (*ddi).second.regex_except.push_back(p);
+  }
   else (*ddi).second.key_except.insert(key);
 
   return *this;
@@ -161,19 +171,26 @@ void subset_tee::process_token(const char* token)
     for(std::map<pass*, subset_tee_dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
       subset_tee_dest_data_t& d = (*di).second;
 
+      size_t len = strlen(token);
       bool add = 0;
       set<string>::const_iterator ki = d.key.find(token);
       if(ki != d.key.end()) add = 1;
       else {
-        for(vector<pcrecpp::RE*>::const_iterator ri = d.regex.begin(); ri != d.regex.end(); ++ri)
-          if((*ri)->FullMatch(token)) { add = 1; break; }
+        for(vector<pcre*>::const_iterator ri = d.regex.begin(); ri != d.regex.end(); ++ri) {
+          int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
+          if(rc >= 0) { add = 1; break; }
+          else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
+        }
       }
 
       set<string>::const_iterator kei = d.key_except.find(token);
       if(kei != d.key_except.end()) add = 0;
       else {
-        for(vector<pcrecpp::RE*>::const_iterator ri = d.regex_except.begin(); ri != d.regex_except.end(); ++ri)
-            if((*ri)->FullMatch(token)) { add = 0; break; }
+        for(vector<pcre*>::const_iterator ri = d.regex_except.begin(); ri != d.regex_except.end(); ++ri) {
+          int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
+          if(rc >= 0) { add = 0; break; }
+          else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
+        }
       }
 
       if(add) {
