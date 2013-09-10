@@ -590,11 +590,11 @@ class filter : public pass {
 
   struct regex_limits_t
   {
-    pcrecpp::RE* regex;
+    pcre* regex;
     limits_t limits;
 
     regex_limits_t() : regex(0) {}
-    ~regex_limits_t() { delete regex; }
+    ~regex_limits_t() { pcre_free(regex); }
   };
 
   pass* out;
@@ -608,8 +608,10 @@ class filter : public pass {
 public:
   filter();
   filter(pass& out);
-  void init(pass& out);
-  void add(bool regex, const char* keyword, double low_limit, double high_limit);
+  filter& init();
+  filter& init(pass& out);
+  filter& set_out(pass& out);
+  filter& add(bool regex, const char* keyword, double low_limit, double high_limit);
 
   void process_token(const char* token);
   void process_line();

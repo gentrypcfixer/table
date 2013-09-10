@@ -1076,24 +1076,30 @@ void row_joiner::process()
 // filter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-filter::filter() : out(0) {}
+filter::filter() { init(); }
 filter::filter(pass& out) { init(out); }
 
-void filter::init(pass& out)
+filter& filter::init()
 {
-  this->out = &out;
+  out = 0;
   keyword_limits.clear();
   keyword_limits.clear();
   first_row = 1;
   column = 0;
   column_limits.clear();
+  return *this;
 }
 
-void filter::add(bool regex, const char* keyword, double low_limit, double high_limit)
+filter& filter::init(pass& out) { init(); return set_out(out); }
+filter& filter::set_out(pass& out) { this->out = &out; return *this; }
+
+filter& filter::add(bool regex, const char* keyword, double low_limit, double high_limit)
 {
   if(regex) {
+    const char* err; int err_off; pcre* p = pcre_compile(keyword, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("filter can't compile regex");
     regex_limits.resize(regex_limits.size() + 1);
-    regex_limits.back().regex = new pcrecpp::RE(keyword);
+    regex_limits.back().regex = p;
     regex_limits.back().limits.low_limit = low_limit;
     regex_limits.back().limits.high_limit = high_limit;
   }
@@ -1102,6 +1108,7 @@ void filter::add(bool regex, const char* keyword, double low_limit, double high_
     l.low_limit = low_limit;
     l.high_limit = high_limit;
   }
+  return *this;
 }
 
 void filter::process_token(const char* token)
@@ -1111,24 +1118,21 @@ void filter::process_token(const char* token)
     map<string, limits_t>::const_iterator i = keyword_limits.find(token);
     if(i != keyword_limits.end()) column_limits.push_back(pair<int, limits_t>(column, (*i).second));
     else {
-      for(vector<regex_limits_t>::const_iterator j = regex_limits.begin(); j != regex_limits.end(); ++j)
-        if((*j).regex->FullMatch(token)) {
-          column_limits.push_back(pair<int, limits_t>(column, (*j).limits));
-          break;
-        }
+      size_t len = strlen(token);
+      for(vector<regex_limits_t>::const_iterator j = regex_limits.begin(); j != regex_limits.end(); ++j) {
+        int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { column_limits.push_back(pair<int, limits_t>(column, (*j).limits)); break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("filter match error");
+      }
     }
     out->process_token(token);
   }
   else {
-    if(column != (*cli).first) out->process_token(token);
+    if(cli == column_limits.end() || column != (*cli).first) out->process_token(token);
     else {
-      double val = 0.0;
-      istringstream iss(token); iss >> val;
-      if(!iss || val < (*cli).second.low_limit || val > (*cli).second.high_limit) out->process_token("");
-      else {
-        stringstream ss; ss << val;
-        out->process_token(ss.str().c_str());
-      }
+      char* next; double val = strtod(token, &next);
+      if(next == token || val < (*cli).second.low_limit || val > (*cli).second.high_limit) out->process_token("");
+      else { out->process_token(token); }
       ++cli;
     }
   }

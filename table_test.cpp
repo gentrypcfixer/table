@@ -86,7 +86,6 @@ int main(int argc, char * argv[])
 
   try {
     csv_file_writer w("data.csv");
-    csv_file_writer w2("data2.csv");
 
     //ordered_tee t(w, w2);
     //tee t(w, w2);
@@ -94,8 +93,8 @@ int main(int argc, char * argv[])
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    //filter f(d2);
-    //f.add(1, "data.*", 0.0, 30000.0);
+    filter f(w);
+    f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -139,11 +138,11 @@ int main(int argc, char * argv[])
     //combiner c(st);
     //c.add_pair("RE_RWB_TTT_(.*)", "RWB_\\1");
 
-    subset_tee s(w);
-    s.add_data(1, ".*");
-    s.add_exception(1, "WLSV_OFST_VPGM_WLGRP1.*");
-    s.set_dest(w2);
-    s.add_data(1, "WLSV_OFST_VPGM_WLGRP1.*");
+    //subset_tee s(w);
+    //s.add_data(1, ".*");
+    //s.add_exception(1, "WLSV_OFST_VPGM_WLGRP1.*");
+    //s.set_dest(w2);
+    //s.add_data(1, "WLSV_OFST_VPGM_WLGRP1.*");
     //s.set_dest(w3);
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
@@ -152,7 +151,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", s);
+    read_csv("raw.csv", f);
 
     //row_joiner rj(w);
 
