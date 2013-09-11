@@ -121,17 +121,17 @@ int main(int argc, char * argv[])
     //sp.add_action(0, "Fail_bin", SP_SPLIT);
     //sp.add_action(0, "Error_bin", SP_SPLIT);
 
-    //stacker st(su, ST_STACK);
-    //st.add_action(0, "LOT", ST_LEAVE);
-    //st.add_action(0, "WAFER", ST_LEAVE);
-    //st.add_action(0, "ROW", ST_LEAVE);
-    //st.add_action(0, "COL", ST_LEAVE);
-    //st.add_action(0, "WAFSIZE", ST_REMOVE);
-    //st.add_action(0, "Process_id", ST_LEAVE);
-    //st.add_action(0, "Fail_bin", ST_LEAVE);
-    //st.add_action(0, "Error_bin", ST_LEAVE);
-    //st.add_action(0, "Group", ST_LEAVE);
-    //st.add_action(0, "MAP_REV", ST_LEAVE);
+    stacker st(w, ST_STACK);
+    st.add_action(0, "LOT", ST_LEAVE);
+    st.add_action(0, "WAFER", ST_LEAVE);
+    st.add_action(0, "ROW", ST_LEAVE);
+    st.add_action(0, "COL", ST_LEAVE);
+    st.add_action(0, "WAFSIZE", ST_REMOVE);
+    st.add_action(0, "Process_id", ST_LEAVE);
+    st.add_action(0, "Fail_bin", ST_LEAVE);
+    st.add_action(0, "Error_bin", ST_LEAVE);
+    st.add_action(0, "Group", ST_LEAVE);
+    st.add_action(0, "MAP_REV", ST_LEAVE);
 
     //calculator ca(st);
 
@@ -147,11 +147,11 @@ int main(int argc, char * argv[])
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
 
-    base_converter bc(w, "WLSV_OFST_VPGM_WLGRP1_MV", 10, 16);
+    //base_converter bc(w, "WLSV_OFST_VPGM_WLGRP1_MV", 10, 16);
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", bc);
+    read_csv("raw.csv", st);
 
     //row_joiner rj(w);
 

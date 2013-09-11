@@ -377,11 +377,11 @@ enum stack_action_e
 
 struct regex_stack_action_t
 {
-  pcrecpp::RE* regex;
+  pcre* regex;
   stack_action_e action;
 
   regex_stack_action_t() : regex(0) {}
-  ~regex_stack_action_t() { delete regex; }
+  ~regex_stack_action_t() { pcre_free(regex); }
 };
 
 class stacker : public pass {
@@ -403,12 +403,14 @@ class stacker : public pass {
   cstring_queue stack_tokens;
 
 public:
-  stacker();
+  stacker(stack_action_e default_action);
   stacker(pass& out, stack_action_e default_action);
   ~stacker();
 
-  void re_init();
+  stacker& re_init();
+  stacker& init(stack_action_e default_action);
   stacker& init(pass& out, stack_action_e default_action);
+  stacker& set_out(pass& out);
   stacker& add_action(bool regex, const char* key, stack_action_e action);
 
   void process_token(const char* token);

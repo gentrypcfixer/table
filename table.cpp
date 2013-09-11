@@ -596,11 +596,11 @@ void summarizer::process_stream()
 // stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-stacker::stacker() : out(0) {}
+stacker::stacker(stack_action_e default_action) { init(default_action); }
 stacker::stacker(pass& out, stack_action_e default_action) { init(out, default_action); }
 stacker::~stacker() {}
 
-void stacker::re_init()
+stacker& stacker::re_init()
 {
   first_line = 1;
   stack_keys.clear();
@@ -611,25 +611,29 @@ void stacker::re_init()
   stack_column = 0;
   leave_tokens.clear();
   stack_tokens.clear();
+  return *this;
 }
 
-stacker& stacker::init(pass& out, stack_action_e default_action)
+stacker& stacker::init(stack_action_e default_action)
 {
-  this->out = &out;
+  this->out = 0;
   this->default_action = default_action;
   keyword_actions.clear();
   regex_actions.clear();
-
   re_init();
-
   return *this;
 }
+
+stacker& stacker::init(pass& out, stack_action_e default_action) { init(default_action); return set_out(out); }
+stacker& stacker::set_out(pass& out) { this->out = &out; return *this; }
 
 stacker& stacker::add_action(bool regex, const char* key, stack_action_e action)
 {
   if(regex) {
+    const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("stacker can't compile group regex");
     regex_actions.resize(regex_actions.size() + 1);
-    regex_actions.back().regex = new pcrecpp::RE(key);
+    regex_actions.back().regex = p;
     regex_actions.back().action = action;
   }
   else keyword_actions[key] = action;
@@ -645,8 +649,11 @@ void stacker::process_token(const char* token)
     map<string, stack_action_e>::iterator i = keyword_actions.find(token);
     if(i != keyword_actions.end()) action = (*i).second;
     else {
+      size_t len = strlen(token);
       for(vector<regex_stack_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
-        if((*j).regex->FullMatch(token)) { action = (*j).action; break; }
+        int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { action = (*j).action; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("stacker match error");
       }
     }
     actions.push_back(action);
