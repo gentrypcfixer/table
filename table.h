@@ -705,12 +705,12 @@ public:
 class base_converter : public pass {
   struct regex_base_conv_t
   {
-    pcrecpp::RE* regex;
+    pcre* regex;
     int from;
     int to;
 
     regex_base_conv_t() : regex(0) {}
-    ~regex_base_conv_t() { delete regex; }
+    ~regex_base_conv_t() { pcre_free(regex); }
   };
 
   pass* out;
@@ -724,7 +724,9 @@ public:
   base_converter();
   base_converter(pass& out, const char* regex, int from, int to);
   ~base_converter();
-  void init(pass& out, const char* regex, int from, int to);
+  base_converter& init();
+  base_converter& init(pass& out, const char* regex, int from, int to);
+  base_converter& set_out(pass& out);
   base_converter& add_conv(const char* regex, int from, int to);
 
   void process_token(const char* token);

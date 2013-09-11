@@ -1426,28 +1426,33 @@ void differ::process_stream()
 // base_converter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-base_converter::base_converter() {}
+base_converter::base_converter() { init(); }
 base_converter::base_converter(pass& out, const char* regex, int from, int to) { init(out, regex, from, to); }
 base_converter::~base_converter() {}
 
-void base_converter::init(pass& out, const char* regex, int from, int to)
+base_converter& base_converter::init()
 {
-  this->out = &out;
+  this->out = 0;
   regex_base_conv.clear();
   first_row = 1;
   column = 0;
   from_base.clear();
   to_base.clear();
-  add_conv(regex, from, to);
+  return *this;
 }
+
+base_converter& base_converter::init(pass& out, const char* regex, int from, int to) { init(); set_out(out); return add_conv(regex, from, to); }
+base_converter& base_converter::set_out(pass& out) { this->out = &out; return *this; }
 
 base_converter& base_converter::add_conv(const char* regex, int from, int to)
 {
   if(from != 8 && from != 10 && from != 16) throw runtime_error("from isn't recognized");
   if(to != 8 && to != 10 && to != 16) throw runtime_error("from isn't recognized");
 
+  const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("base_converter can't compile regex");
   regex_base_conv.resize(regex_base_conv.size() + 1);
-  regex_base_conv.back().regex = new pcrecpp::RE(regex);
+  regex_base_conv.back().regex = p;
   regex_base_conv.back().from = from;
   regex_base_conv.back().to = to;
 
@@ -1458,31 +1463,32 @@ void base_converter::process_token(const char* token)
 {
   if(first_row) {
     if(!out) throw runtime_error("differ has no out");
-    int from = 0; int to = 0;
+    size_t len = strlen(token);
+    int from = -1; int to = 0;
     for(vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
-      if((*i).regex->FullMatch(token)) {
-        from = (*i).from; to = (*i).to;
-        break;
-      }
+      int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { from = (*i).from; to = (*i).to; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("base_converter match error");
     }
     from_base.push_back(from); to_base.push_back(to);
     out->process_token(token);
   }
-  else if(!from_base[column]) out->process_token(token);
-  else if(token[0]) {
-    int ivalue = 0;
+  else if(from_base[column] < 0) out->process_token(token);
+  else {
+    char* next = 0;
+    long int ivalue = 0;
     double dvalue = 0.0;
-    istringstream ss(token);
-    if(from_base[column] == 8) { ss >> oct >> ivalue; dvalue = ivalue; }
-    else if(from_base[column] == 10) { ss >> dec >> dvalue; ivalue = (int)dvalue; }
-    else if(from_base[column] == 16) { ss >> hex >> ivalue; dvalue = ivalue; }
-    if(!ss) throw runtime_error("couldn't read value");
+    if(from_base[column] == 10) { dvalue = strtod(token, &next); ivalue = (long int)dvalue; }
+    else { ivalue = strtol(token, &next, from_base[column]); dvalue = ivalue; }
 
-    ostringstream oss;
-    if(to_base[column] == 8) oss << oct << ivalue;
-    else if(to_base[column] == 10) oss << dec << dvalue;
-    else if(to_base[column] == 16) oss << hex << ivalue;
-    out->process_token(oss.str().c_str());
+    if(next == token) out->process_token(token);
+    else {
+      char buf[256];
+      if(to_base[column] == 10) { sprintf(buf, "%f", dvalue); out->process_token(buf); }
+      else if(to_base[column] == 8) { sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
+      else if(to_base[column] == 16) { sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
+      else out->process_token(token);
+    }
   }
 
   ++column;

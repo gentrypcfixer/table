@@ -93,8 +93,8 @@ int main(int argc, char * argv[])
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    filter f(w);
-    f.add(1, "V20_OFFSET", -100.0, 30000.0);
+    //filter f(w);
+    //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -147,11 +147,11 @@ int main(int argc, char * argv[])
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
 
-    //base_converter bc(s, "PGM_OTP.*", 16, 10);
+    base_converter bc(w, "WLSV_OFST_VPGM_WLGRP1_MV", 10, 16);
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", f);
+    read_csv("raw.csv", bc);
 
     //row_joiner rj(w);
 
