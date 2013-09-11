@@ -96,30 +96,30 @@ int main(int argc, char * argv[])
     //filter f(w);
     //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
-    summarizer su(w);
-    su.add_group("^LOT$");
-    su.add_group("^WAFER$");
-    su.add_exception("^ROW$");
-    su.add_exception("^COL$");
-    su.add_exception("^WAFSIZE$");
-    su.add_exception("^Process_id$");
-    su.add_exception("^Fail_bin$");
-    su.add_exception("^Error_bin$");
-    su.add_group("^Group$");
-    su.add_exception("^MAP_REV$");
-    su.add_group("^keyword$");
-    su.add_data(".*", SUM_AVG);
+    //summarizer su(w);
+    //su.add_group("^LOT$");
+    //su.add_group("^WAFER$");
+    //su.add_exception("^ROW$");
+    //su.add_exception("^COL$");
+    //su.add_exception("^WAFSIZE$");
+    //su.add_exception("^Process_id$");
+    //su.add_exception("^Fail_bin$");
+    //su.add_exception("^Error_bin$");
+    //su.add_group("^Group$");
+    //su.add_exception("^MAP_REV$");
+    //su.add_group("^keyword$");
+    //su.add_data(".*", SUM_AVG);
 
-    //splitter sp(w, SP_REMOVE);
-    //sp.add_action(0, "LOT", SP_GROUP);
-    //sp.add_action(0, "WAFER", SP_GROUP);
-    //sp.add_action(0, "ROW", SP_GROUP);
-    //sp.add_action(0, "COL", SP_GROUP);
-    //sp.add_action(0, "keyword", SP_GROUP);
-    //sp.add_action(0, "Group", SP_SPLIT_BY);
-    //sp.add_action(0, "data", SP_SPLIT);
-    //sp.add_action(0, "Fail_bin", SP_SPLIT);
-    //sp.add_action(0, "Error_bin", SP_SPLIT);
+    splitter sp(w, SP_REMOVE);
+    sp.add_action(0, "LOT", SP_GROUP);
+    sp.add_action(0, "WAFER", SP_GROUP);
+    sp.add_action(0, "ROW", SP_GROUP);
+    sp.add_action(0, "COL", SP_GROUP);
+    sp.add_action(0, "keyword", SP_GROUP);
+    sp.add_action(0, "Group", SP_SPLIT_BY);
+    sp.add_action(0, "data", SP_SPLIT);
+    sp.add_action(0, "Fail_bin", SP_SPLIT);
+    sp.add_action(0, "Error_bin", SP_SPLIT);
 
     //stacker st(w, ST_STACK);
     //st.add_action(0, "LOT", ST_LEAVE);
@@ -151,7 +151,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", su);
+    read_csv("raw.csv", sp);
 
     //row_joiner rj(w);
 

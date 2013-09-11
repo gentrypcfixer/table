@@ -433,11 +433,11 @@ enum split_action_e
 
 struct regex_split_action_t
 {
-  pcrecpp::RE* regex;
+  pcre* regex;
   split_action_e action;
 
   regex_split_action_t() : regex(0) {}
-  ~regex_split_action_t() { delete regex; }
+  ~regex_split_action_t() { pcre_free(regex); }
 };
 
 class splitter : public pass {
@@ -474,14 +474,13 @@ class splitter : public pass {
   data_t data;
 
 public:
-  splitter();
+  splitter(split_action_e default_action);
   splitter(pass& out, split_action_e default_action);
-  splitter& init();
+  splitter& init(split_action_e default_action);
   splitter& init(pass& out, split_action_e default_action);
   ~splitter();
 
   splitter& set_out(pass& out);
-  splitter& set_default_action(split_action_e default_action);
   splitter& add_action(bool regex, const char* key, split_action_e action);
 
   void process_token(const char* token);

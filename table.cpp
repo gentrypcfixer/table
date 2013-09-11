@@ -713,13 +713,13 @@ void stacker::process_stream()
 // splitter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-splitter::splitter() : group_tokens(0), split_by_tokens(0), split_tokens(0) { init(); }
+splitter::splitter(split_action_e default_action) : group_tokens(0), split_by_tokens(0), split_tokens(0) { init(default_action); }
 splitter::splitter(pass& out, split_action_e default_action) : group_tokens(0), split_by_tokens(0), split_tokens(0)  { init(out, default_action); }
 
-splitter& splitter::init()
+splitter& splitter::init(split_action_e default_action)
 {
   this->out = 0;
-  this->default_action = SP_REMOVE;
+  this->default_action = default_action;
   keyword_actions.clear();
   regex_actions.clear();
 
@@ -753,7 +753,7 @@ splitter& splitter::init()
   return *this;
 }
 
-splitter& splitter::init(pass& out, split_action_e default_action) { init(); set_out(out); return set_default_action(default_action); }
+splitter& splitter::init(pass& out, split_action_e default_action) { init(default_action); return set_out(out); }
 
 splitter::~splitter()
 {
@@ -767,13 +767,14 @@ splitter::~splitter()
 }
 
 splitter& splitter::set_out(pass& out) { this->out = &out; return *this; }
-splitter& splitter::set_default_action(split_action_e default_action) { this->default_action = default_action; return *this; }
 
 splitter& splitter::add_action(bool regex, const char* key, split_action_e action)
 {
   if(regex) {
+    const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("splitter can't compile data regex");
     regex_actions.resize(regex_actions.size() + 1);
-    regex_actions.back().regex = new pcrecpp::RE(key);
+    regex_actions.back().regex = p;
     regex_actions.back().action = action;
   }
   else keyword_actions[key] = action;
@@ -789,8 +790,11 @@ void splitter::process_token(const char* token)
     map<string, split_action_e>::iterator i = keyword_actions.find(token);
     if(i != keyword_actions.end()) action = (*i).second;
     else {
+      size_t len = strlen(token);
       for(vector<regex_split_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
-        if((*j).regex->FullMatch(token)) { action = (*j).action; break; }
+        int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { action = (*j).action; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("splitter match error");
       }
     }
     actions.push_back(action);
