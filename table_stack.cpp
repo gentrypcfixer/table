@@ -5,7 +5,7 @@
 using namespace std;
 using namespace table;
 
-int main(const unsigned int argc, char const * const argv[])
+int main(int argc, char* argv[])
 {
   int ret_val = 0;
 
@@ -15,7 +15,7 @@ int main(const unsigned int argc, char const * const argv[])
 
     stack_action_e mode = ST_STACK;
     bool regex = 0;
-    for(size_t arg = 1; arg < argc; ++arg) {
+    for(int arg = 1; arg < argc; ++arg) {
       if('-' == argv[arg][0]) {
         if('s' == argv[arg][1]) { mode = ST_STACK; regex = 0; }
         if('S' == argv[arg][1]) { mode = ST_STACK; regex = 1; }
