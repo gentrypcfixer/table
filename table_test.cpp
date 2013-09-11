@@ -96,19 +96,19 @@ int main(int argc, char * argv[])
     //filter f(w);
     //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
-    //summarizer su(w);
-    //su.add_group("^LOT$");
-    //su.add_group("^WAFER$");
-    //su.add_exception("^ROW$");
-    //su.add_exception("^COL$");
-    //su.add_exception("^WAFSIZE$");
-    //su.add_exception("^Process_id$");
-    //su.add_exception("^Fail_bin$");
-    //su.add_exception("^Error_bin$");
-    //su.add_group("^Group$");
-    //su.add_exception("^MAP_REV$");
-    //su.add_group("^keyword$");
-    //su.add_data(".*", SUM_AVG);
+    summarizer su(w);
+    su.add_group("^LOT$");
+    su.add_group("^WAFER$");
+    su.add_exception("^ROW$");
+    su.add_exception("^COL$");
+    su.add_exception("^WAFSIZE$");
+    su.add_exception("^Process_id$");
+    su.add_exception("^Fail_bin$");
+    su.add_exception("^Error_bin$");
+    su.add_group("^Group$");
+    su.add_exception("^MAP_REV$");
+    su.add_group("^keyword$");
+    su.add_data(".*", SUM_AVG);
 
     //splitter sp(w, SP_REMOVE);
     //sp.add_action(0, "LOT", SP_GROUP);
@@ -121,17 +121,17 @@ int main(int argc, char * argv[])
     //sp.add_action(0, "Fail_bin", SP_SPLIT);
     //sp.add_action(0, "Error_bin", SP_SPLIT);
 
-    stacker st(w, ST_STACK);
-    st.add_action(0, "LOT", ST_LEAVE);
-    st.add_action(0, "WAFER", ST_LEAVE);
-    st.add_action(0, "ROW", ST_LEAVE);
-    st.add_action(0, "COL", ST_LEAVE);
-    st.add_action(0, "WAFSIZE", ST_REMOVE);
-    st.add_action(0, "Process_id", ST_LEAVE);
-    st.add_action(0, "Fail_bin", ST_LEAVE);
-    st.add_action(0, "Error_bin", ST_LEAVE);
-    st.add_action(0, "Group", ST_LEAVE);
-    st.add_action(0, "MAP_REV", ST_LEAVE);
+    //stacker st(w, ST_STACK);
+    //st.add_action(0, "LOT", ST_LEAVE);
+    //st.add_action(0, "WAFER", ST_LEAVE);
+    //st.add_action(0, "ROW", ST_LEAVE);
+    //st.add_action(0, "COL", ST_LEAVE);
+    //st.add_action(0, "WAFSIZE", ST_REMOVE);
+    //st.add_action(0, "Process_id", ST_LEAVE);
+    //st.add_action(0, "Fail_bin", ST_LEAVE);
+    //st.add_action(0, "Error_bin", ST_LEAVE);
+    //st.add_action(0, "Group", ST_LEAVE);
+    //st.add_action(0, "MAP_REV", ST_LEAVE);
 
     //calculator ca(st);
 
@@ -151,7 +151,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", st);
+    read_csv("raw.csv", su);
 
     //row_joiner rj(w);
 

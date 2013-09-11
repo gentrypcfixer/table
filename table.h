@@ -328,7 +328,7 @@ class summarizer : public pass {
 
   bool first_line;
   std::vector<uint32_t> column_flags;
-  int num_data_columns;
+  size_t num_data_columns;
 
   std::vector<uint32_t>::const_iterator cfi;
   double* values;

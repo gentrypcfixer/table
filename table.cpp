@@ -515,7 +515,7 @@ void summarizer::process_line()
       data_storage_next += num_data_columns;
     }
     vi = values;
-    for(int c = 0; c < num_data_columns; ++c, ++vi) {
+    for(size_t c = 0; c < num_data_columns; ++c, ++vi) {
       summarizer_data_t& d = (*i).second[c];
       if(isnan(*vi)) ++d.missing;
       else {
