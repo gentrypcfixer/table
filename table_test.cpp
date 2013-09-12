@@ -110,16 +110,16 @@ int main(int argc, char * argv[])
     //su.add_group("^keyword$");
     //su.add_data(".*", SUM_AVG);
 
-    splitter sp(w, SP_REMOVE);
-    sp.add_action(0, "LOT", SP_GROUP);
-    sp.add_action(0, "WAFER", SP_GROUP);
-    sp.add_action(0, "ROW", SP_GROUP);
-    sp.add_action(0, "COL", SP_GROUP);
-    sp.add_action(0, "keyword", SP_GROUP);
-    sp.add_action(0, "Group", SP_SPLIT_BY);
-    sp.add_action(0, "data", SP_SPLIT);
-    sp.add_action(0, "Fail_bin", SP_SPLIT);
-    sp.add_action(0, "Error_bin", SP_SPLIT);
+    //splitter sp(w, SP_REMOVE);
+    //sp.add_action(0, "LOT", SP_GROUP);
+    //sp.add_action(0, "WAFER", SP_GROUP);
+    //sp.add_action(0, "ROW", SP_GROUP);
+    //sp.add_action(0, "COL", SP_GROUP);
+    //sp.add_action(0, "keyword", SP_GROUP);
+    //sp.add_action(0, "Group", SP_SPLIT_BY);
+    //sp.add_action(0, "data", SP_SPLIT);
+    //sp.add_action(0, "Fail_bin", SP_SPLIT);
+    //sp.add_action(0, "Error_bin", SP_SPLIT);
 
     //stacker st(w, ST_STACK);
     //st.add_action(0, "LOT", ST_LEAVE);
@@ -135,8 +135,8 @@ int main(int argc, char * argv[])
 
     //calculator ca(st);
 
-    //combiner c(st);
-    //c.add_pair("RE_RWB_TTT_(.*)", "RWB_\\1");
+    combiner c(w);
+    c.add_pair("^BIN_O_FTR_(.*BG)$", "BIN_OO_\\1");
 
     //subset_tee s(w);
     //s.add_data(1, ".*");
@@ -151,7 +151,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", sp);
+    read_csv("raw2.csv", c);
 
     //row_joiner rj(w);
 

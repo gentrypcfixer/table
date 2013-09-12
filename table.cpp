@@ -1256,24 +1256,37 @@ void col_pruner::process_stream()
 // combiner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-combiner::combiner() : out(0) {}
+combiner::combiner() { init(); }
 combiner::combiner(pass& out) { init(out); }
 
-void combiner::init(pass& out)
+combiner::~combiner()
 {
-  this->out = &out;
+  for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) pcre_free((*i).first);
+}
+
+combiner& combiner::init()
+{
+  this->out = 0;
+  for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) { pcre_free((*i).first); }
   pairs.clear();
   first_row = 1;
   column = 0;
   remap_indexes.clear();
   tokens.clear();
+  return *this;
 }
 
-void combiner::add_pair(const char* from, const char* to)
+combiner& combiner::init(pass& out) { init(); return set_out(out); }
+combiner& combiner::set_out(pass& out) { this->out = &out; return *this; }
+
+combiner& combiner::add_pair(const char* from, const char* to)
 {
+  const char* err; int err_off; pcre* p = pcre_compile(from, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("combiner can't compile regex");
   pairs.resize(pairs.size() + 1);
-  pairs.back().first = from;
+  pairs.back().first = p;
   pairs.back().second = to;
+  return *this;
 }
 
 void combiner::process_token(const char* token)
@@ -1300,25 +1313,48 @@ void combiner::process_line()
     remap_indexes.resize(tokens.size());
     for(size_t i = 0; i < remap_indexes.size(); ++i) remap_indexes[i] = i;
 
-    for(vector<pair<string, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) {
-      pcrecpp::RE search((*i).first);
+    char* buf = new char[2048];
+    char* end = buf + 2048;
+    for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) {
       for(size_t j = 0; j < tokens.size(); ++j) {
-        string to = tokens[j];
-        if(search.Replace((*i).second, &to)) {
+        int ovector[30]; int rc = pcre_exec((*i).first, 0, tokens[j].c_str(), tokens[j].size(), 0, 0, ovector, 30);
+        if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error"); }
+        else {
+          char* next = buf;
+          if(!rc) rc = 10;
+          for(const char* rp = (*i).second.c_str(); 1; ++rp) {
+            int br = 0;
+            if(*rp == '\\' && isdigit(*(rp + 1)) && rc > (br = *(rp + 1) - '0')) {
+              const char* cs = tokens[j].c_str() + ovector[br * 2];
+              const char* ce = tokens[j].c_str() + ovector[br * 2 + 1];
+              while(cs < ce) {
+                if(next >= end) resize_buffer(buf, next, end);
+                *next++ = *cs++;
+              }
+              ++rp;
+            }
+            else {
+              if(next >= end) resize_buffer(buf, next, end);
+              *next++ = *rp;
+              if(!*rp) break;
+            }
+          }
+
           size_t k = 0;
           for(; k < tokens.size(); ++k) {
             if(j == k) continue;
-            if(to == tokens[k]) break;
+            if(!tokens[k].compare(buf)) break;
           }
           if(k >= tokens.size()) {
-            stringstream msg; msg << "can't find to (" << to << ')';
+            stringstream msg; msg << "can't find to (" << buf << ')';
             throw runtime_error(msg.str());
           }
           remap_indexes[j] = k;
-          tokens[j] = to;
+          tokens[j] = buf;
         }
       }
     }
+    delete[] buf;
 
     //compact out the gaps
     int max_out_index = 0;

@@ -2,7 +2,7 @@ CPP = /usr/bin/g++
 CPPFLAGS = -Wall
 CPPFLAGS += -g
 CPPFLAGS += -O2
-LDFLAGS = -lpcrecpp
+LDFLAGS = -lpcre
 
 AR = ar
 ARFLAGS = rcs

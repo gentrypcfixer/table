@@ -4,9 +4,7 @@
 #define use_unordered
 
 #include <string>
-#ifdef use_unordered
-# include <tr1/unordered_map>
-#endif
+#include <tr1/unordered_map>
 #include <map>
 #include <set>
 #include <list>
@@ -14,7 +12,6 @@
 #include <iostream>
 #include <sstream>
 #include <pcre.h>
-#include <pcrecpp.h>
 #include <stdint.h>
 
 
@@ -651,17 +648,20 @@ public:
 
 class combiner : public pass {
   pass* out;
-  std::vector<std::pair<std::string, std::string> > pairs;
+  std::vector<std::pair<pcre*, std::string> > pairs;
   bool first_row;
   int column;
   std::vector<int> remap_indexes;
-  std::vector<string> tokens;
+  std::vector<std::string> tokens;
 
 public:
   combiner();
   combiner(pass& out);
-  void init(pass& out);
-  void add_pair(const char* from, const char* to);
+  ~combiner();
+  combiner& init();
+  combiner& init(pass& out);
+  combiner& set_out(pass& out);
+  combiner& add_pair(const char* from, const char* to);
 
   void process_token(const char* token);
   void process_line();
