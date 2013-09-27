@@ -13,6 +13,7 @@
 #include <sstream>
 #include <pcre.h>
 #include <stdint.h>
+#include <string.h>
 
 
 namespace table {
@@ -729,6 +730,61 @@ public:
   base_converter& init(pass& out, const char* regex, int from, int to);
   base_converter& set_out(pass& out);
   base_converter& add_conv(const char* regex, int from, int to);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// variance_analyzer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct variance_analyzer_treatment_data_t
+{
+  int count;
+  double sum;
+  double sum_of_squares;
+
+  variance_analyzer_treatment_data_t() : count(0), sum(0.0), sum_of_squares(0.0) {}
+};
+
+class variance_analyzer : public pass {
+  pass* out;
+  std::vector<pcre*> group_regexes;
+  std::vector<pcre*> data_regexes;
+  std::vector<pcre*> exception_regexes;
+
+  bool first_line;
+  std::vector<char> column_type; // 0 = ignore, 1 = group, 2 = data
+  std::vector<std::string> data_keywords;
+
+  std::vector<char>::const_iterator cti;
+  char* group_tokens;
+  char* group_tokens_next;
+  char* group_tokens_end;
+  std::vector<char*> group_storage;
+  char* group_storage_next;
+  char* group_storage_end;
+  typedef std::map<char*, size_t, multi_cstr_less> groups_t;
+  groups_t groups;
+  double* values;
+  double* vi;
+  typedef std::vector<variance_analyzer_treatment_data_t*> data_t;
+  data_t data; // keyword fast, group/treatment slow
+
+public:
+  variance_analyzer();
+  variance_analyzer(pass& out);
+  ~variance_analyzer();
+  variance_analyzer& init();
+  variance_analyzer& init(pass& out);
+  variance_analyzer& set_out(pass& out);
+
+  variance_analyzer& add_group(const char* regex);
+  variance_analyzer& add_data(const char* regex);
+  variance_analyzer& add_exception(const char* regex);
 
   void process_token(const char* token);
   void process_line();

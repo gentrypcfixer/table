@@ -96,6 +96,19 @@ int main(int argc, char * argv[])
     //filter f(w);
     //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
+    variance_analyzer a(w);
+    a.add_group("^LOT$");
+    a.add_group("^WAFER$");
+    a.add_exception("^ROW$");
+    a.add_exception("^COL$");
+    a.add_exception("^WAFSIZE$");
+    a.add_exception("^Process_id$");
+    a.add_exception("^Fail_bin$");
+    a.add_exception("^Error_bin$");
+    a.add_group("^Group$");
+    a.add_exception("^MAP_REV$");
+    a.add_data(".*");
+
     //summarizer su(w);
     //su.add_group("^LOT$");
     //su.add_group("^WAFER$");
@@ -135,8 +148,8 @@ int main(int argc, char * argv[])
 
     //calculator ca(st);
 
-    combiner c(w);
-    c.add_pair("^BIN_O_FTR_(.*BG)$", "BIN_OO_\\1");
+    //combiner c(w);
+    //c.add_pair("^BIN_O_FTR_(.*BG)$", "BIN_OO_\\1");
 
     //subset_tee s(w);
     //s.add_data(1, ".*");
@@ -151,7 +164,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw2.csv", c);
+    read_csv("raw.csv", a);
 
     //row_joiner rj(w);
 
