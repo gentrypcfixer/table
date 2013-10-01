@@ -35,6 +35,11 @@ void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end)
   if(resize_end) *resize_end = end - resize;
 }
 
+static double ibeta(double a, double b, double x)
+{
+  return 0.0;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
@@ -1733,7 +1738,8 @@ void variance_analyzer::process_stream()
   }
   out->process_token("AVG");
   out->process_token("STD_DEV");
-  out->process_token("F");
+  out->process_token("f");
+  out->process_token("p");
   out->process_line();
 
   const size_t max_groups = groups.size();
@@ -1769,12 +1775,18 @@ void variance_analyzer::process_stream()
     if(num_groups > 1) {
       double total_sum_squared_over_total_count = ((total_sum * total_sum) / total_count);
       double sst = sum_of_sum_of_squares - total_sum_squared_over_total_count;
+      //double sst_df = (total_count - 1);
       double sstr = sum_of_sum_squared_over_count - total_sum_squared_over_total_count;
-      double f = (sstr / (num_groups - 1)) / ((sst - sstr) / (total_count - num_groups));
+      double sstr_df = (num_groups - 1);
+      double sse = sst - sstr;
+      double sse_df = (total_count - num_groups);
+      double f = (sstr / sstr_df) / (sse / sse_df);
+      double p = ibeta(sstr_df / 2, sse_df / 2, (sstr_df * f) / (sstr_df * f + sse_df));
 
       sprintf(group_tokens, "%f", total_sum / total_count); out->process_token(group_tokens);
       sprintf(group_tokens, "%f", sqrt(sst / (total_count - 1))); out->process_token(group_tokens);
       sprintf(group_tokens, "%f", f); out->process_token(group_tokens);
+      sprintf(group_tokens, "%f", p); out->process_token(group_tokens);
     }
     else {
       group_tokens[0] = '\0';
