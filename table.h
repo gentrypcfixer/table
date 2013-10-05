@@ -276,14 +276,17 @@ class ordered_tee : public pass {
   std::vector<pass*> out;
   bool first_row;
   int num_columns;
-  cstring_queue data;
+  std::vector<char*> data;
+  char* next;
+  char* end;
 
 public:
   ordered_tee();
   ordered_tee(pass& out1, pass& out2);
   ~ordered_tee();
-  void init(pass& out1, pass& out2);
-  void add_out(pass& out);
+  ordered_tee& init();
+  ordered_tee& init(pass& out1, pass& out2);
+  ordered_tee& add_out(pass& out);
 
   void process_token(const char* token);
   void process_line();

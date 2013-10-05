@@ -86,8 +86,9 @@ int main(int argc, char * argv[])
 
   try {
     csv_file_writer w("data.csv");
+    csv_file_writer w2("data2.csv");
 
-    //ordered_tee t(w, w2);
+    ordered_tee t(w, w2);
     //tee t(w, w2);
 
     //differ d(w, "data C11", "data J71", "delta");
@@ -164,7 +165,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(st);
 
-    read_csv("raw.csv", a);
+    read_csv("raw.csv", t);
 
     //row_joiner rj(w);
 

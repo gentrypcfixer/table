@@ -236,22 +236,28 @@ void subset_tee::process_stream()
 // ordered_tee
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-ordered_tee::ordered_tee() {}
+ordered_tee::ordered_tee() { init(); }
 ordered_tee::ordered_tee(pass& out1, pass& out2) { init(out1, out2); }
-ordered_tee::~ordered_tee() {}
 
-void ordered_tee::init(pass& out1, pass& out2)
+ordered_tee::~ordered_tee()
+{
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
+}
+
+ordered_tee& ordered_tee::init()
 {
   out.clear();
   first_row = 1;
   num_columns = 0;
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
   data.clear();
-  data.set_default_cap(256 * 1024);
-  out.push_back(&out1);
-  out.push_back(&out2);
+  next = 0;
+  end = 0;
+  return *this;
 }
 
-void ordered_tee::add_out(pass& out) { this->out.push_back(&out); }
+ordered_tee& ordered_tee::init(pass& out1, pass& out2) { init(); out.push_back(&out1); out.push_back(&out2); return *this; }
+ordered_tee& ordered_tee::add_out(pass& out) { this->out.push_back(&out); return *this; }
 
 void ordered_tee::process_token(const char* token)
 {
@@ -260,7 +266,17 @@ void ordered_tee::process_token(const char* token)
 
   if(first_row) ++num_columns;
 
-  data.push(token);
+  size_t len = strlen(token);
+  if(!next || (len + 2) > size_t(end - next)) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    if(cap < len + 2) cap = len + 2;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  } 
+  memcpy(next, token, len + 1);
+  next += len + 1;
 }
 
 void ordered_tee::process_line()
@@ -273,6 +289,8 @@ void ordered_tee::process_line()
 
 void ordered_tee::process_stream()
 {
+  if(next) *next++ = '\x03';
+
   vector<pass*>::iterator oi = out.begin();
   (*oi)->process_stream();
   for(++oi; oi != out.end(); ++oi) {
@@ -280,29 +298,23 @@ void ordered_tee::process_stream()
     const bool last_out = noi == out.end();
 
     int column = 0;
-    if(!last_out) {
-      for(cstring_queue::const_iterator i = data.begin(); i != data.end(); ++i) {
-        (*oi)->process_token(*i);
-        data.pop();
+    for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
+      const char* p = *i;
+      while(*p != '\03') {
+        (*oi)->process_token(p);
+        while(*p) ++p;
+        ++p;
         if(++column >= num_columns) {
           (*oi)->process_line();
           column = 0;
         }
       }
+      if(last_out) delete[] *i;
     }
-    else {
-      while(!data.empty()) {
-        (*oi)->process_token(data.front());
-        data.pop();
-        if(++column >= num_columns) {
-          (*oi)->process_line();
-          column = 0;
-        }
-      }
-    }
+
+    if(last_out) { data.clear(); next = 0; }
     (*oi)->process_stream();
   }
-  data.clear();
 }
 
 
