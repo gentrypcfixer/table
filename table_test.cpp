@@ -85,10 +85,9 @@ int main(int argc, char * argv[])
   int ret_val = 0;
 
   try {
-    csv_file_writer w("data.csv");
-    csv_file_writer w2("data2.csv");
+    csv_file_writer w("data2.csv");
 
-    ordered_tee t(w, w2);
+    //ordered_tee t(w, w2);
     //tee t(w, w2);
 
     //differ d(w, "data C11", "data J71", "delta");
@@ -97,18 +96,18 @@ int main(int argc, char * argv[])
     //filter f(w);
     //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
-    variance_analyzer a(w);
-    a.add_group("^LOT$");
-    a.add_group("^WAFER$");
-    a.add_exception("^ROW$");
-    a.add_exception("^COL$");
-    a.add_exception("^WAFSIZE$");
-    a.add_exception("^Process_id$");
-    a.add_exception("^Fail_bin$");
-    a.add_exception("^Error_bin$");
-    a.add_group("^Group$");
-    a.add_exception("^MAP_REV$");
-    a.add_data(".*");
+    //variance_analyzer a(w);
+    //a.add_group("^LOT$");
+    //a.add_group("^WAFER$");
+    //a.add_exception("^ROW$");
+    //a.add_exception("^COL$");
+    //a.add_exception("^WAFSIZE$");
+    //a.add_exception("^Process_id$");
+    //a.add_exception("^Fail_bin$");
+    //a.add_exception("^Error_bin$");
+    //a.add_group("^Group$");
+    //a.add_exception("^MAP_REV$");
+    //a.add_data(".*");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -163,9 +162,9 @@ int main(int argc, char * argv[])
 
     //base_converter bc(w, "WLSV_OFST_VPGM_WLGRP1_MV", 10, 16);
 
-    //col_pruner cp(st);
+    col_pruner cp(w);
 
-    read_csv("raw.csv", t);
+    read_csv("data.csv", cp);
 
     //row_joiner rj(w);
 

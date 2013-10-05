@@ -1188,19 +1188,30 @@ void filter::process_stream()
 // col_pruner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-col_pruner::col_pruner() : out(0), has_data(0) {}
+col_pruner::col_pruner() : has_data(0) { init(); }
 col_pruner::col_pruner(pass& out) : has_data(0) { init(out); }
 
-void col_pruner::init(pass& out)
+col_pruner::~col_pruner()
 {
-  this->out = &out;
+  delete[] has_data;
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
+}
+
+col_pruner& col_pruner::init()
+{
+  this->out = 0;
   first_row = 1;
   passthrough = 0;
   column = 0;
   delete[] has_data; has_data = 0;
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
   data.clear();
-  data.set_default_cap(256 * 1024);
+  next = 0;
+  return *this;
 }
+
+col_pruner& col_pruner::init(pass& out) { init(); return set_out(out); }
+col_pruner& col_pruner::set_out(pass& out) { this->out = &out; return *this; }
 
 void col_pruner::process_token(const char* token)
 {
@@ -1216,7 +1227,17 @@ void col_pruner::process_token(const char* token)
     }
   }
 
-  data.push(token);
+  size_t len = strlen(token);
+  if(!next || (len + 2) > size_t(end - next)) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    if(cap < len + 2) cap = len + 2;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  } 
+  memcpy(next, token, len + 1);
+  next += len + 1;
   ++column;
 }
 
@@ -1229,20 +1250,30 @@ void col_pruner::process_line()
     first_row = 0;
     num_columns = column;
     columns_with_data = 0;
-    delete[] has_data; has_data = new uint32_t[(num_columns + 31) / 32];
+    const size_t has_data_words = (num_columns + 31) / 32;
+    delete[] has_data; has_data = new uint32_t[has_data_words];
+    memset(has_data, 0x00, has_data_words * sizeof(uint32_t));
   }
   else if(columns_with_data >= num_columns) {
+    if(next) *next++ = '\x03';
     size_t c = 0;
-    while(!data.empty()) {
-      out->process_token(data.front());
-      data.pop();
-      if(++c >= num_columns) {
-        out->process_line();
-        c = 0;
+    for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
+      const char* p = *i;
+      while(*p != '\03') {
+        out->process_token(p);
+        while(*p) ++p;
+        ++p;
+        if(++c >= num_columns) {
+          out->process_line();
+          c = 0;
+        }
       }
+      delete[] *i;
     }
     passthrough = 1;
     delete[] has_data; has_data = 0;
+    data.clear();
+    next = 0;
   }
 
   column = 0;
@@ -1254,17 +1285,26 @@ void col_pruner::process_stream()
 
   if(!out) throw runtime_error("col_pruner has no out");
 
+  if(next) *next++ = '\x03';
+
   size_t c = 0;
-  while(!data.empty()) {
-    if(has_data[c / 32] & (1 << (c % 32)))
-      out->process_token(data.front());
-    data.pop();
-    if(++c >= num_columns) {
-      out->process_line();
-      c = 0;
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
+    const char* p = *i;
+    while(*p != '\03') {
+      if(has_data[c / 32] & (1 << (c % 32)))
+        out->process_token(p);
+      while(*p) ++p;
+      ++p;
+      if(++c >= num_columns) {
+        out->process_line();
+        c = 0;
+      }
     }
+    delete[] *i;
   }
   delete[] has_data; has_data = 0;
+  data.clear();
+  next = 0;
   out->process_stream();
 }
 

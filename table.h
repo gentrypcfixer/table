@@ -633,12 +633,17 @@ class col_pruner : public pass {
   size_t num_columns;
   size_t columns_with_data;
   uint32_t* has_data;
-  cstring_queue data;
+  std::vector<char*> data;
+  char* next;
+  char* end;
 
 public:
   col_pruner();
   col_pruner(pass& out);
-  void init(pass& out);
+  ~col_pruner();
+  col_pruner& init();
+  col_pruner& init(pass& out);
+  col_pruner& set_out(pass& out);
 
   void process_token(const char* token);
   void process_line();
