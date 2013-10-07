@@ -1,19 +1,13 @@
 #ifndef table_h_
 #define table_h_
 
-#define use_unordered
-
 #include <string>
 #include <tr1/unordered_map>
 #include <map>
 #include <set>
-#include <list>
 #include <vector>
-#include <iostream>
-#include <sstream>
 #include <pcre.h>
 #include <stdint.h>
-#include <string.h>
 
 
 namespace table {
@@ -295,77 +289,6 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// summarizer
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-enum summarizer_flags {
-  SUM_MISSING =  0x0002,
-  SUM_COUNT =    0x0004,
-  SUM_SUM =      0x0008,
-  SUM_MIN =      0x0010,
-  SUM_MAX =      0x0020,
-  SUM_AVG =      0x0040,
-  SUM_VARIANCE = 0x0080,
-  SUM_STD_DEV =  0x0100
-};
-
-struct summarizer_data_t
-{
-  int missing;
-  int count;
-  double sum;
-  double sum_of_squares;
-  double min;
-  double max;
-
-  summarizer_data_t();
-};
-
-class summarizer : public pass {
-  pass* out;
-  std::vector<pcre*> group_regexes;
-  std::vector<std::pair<pcre*, uint32_t> > data_regexes;
-  std::vector<pcre*> exception_regexes;
-
-  bool first_line;
-  std::vector<uint32_t> column_flags;
-  size_t num_data_columns;
-
-  std::vector<uint32_t>::const_iterator cfi;
-  double* values;
-  double* vi;
-  char* group_tokens;
-  char* group_tokens_next;
-  char* group_tokens_end;
-
-  std::vector<char*> group_storage;
-  char* group_storage_next;
-  char* group_storage_end;
-  std::vector<summarizer_data_t*> data_storage;
-  summarizer_data_t* data_storage_next;
-  summarizer_data_t* data_storage_end;
-  typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
-  data_t data;
-
-public:
-  summarizer();
-  summarizer(pass& out);
-  summarizer& init();
-  summarizer& set_out(pass& out);
-  summarizer& init(pass& out);
-  ~summarizer();
-
-  summarizer& add_group(const char* regex);
-  summarizer& add_data(const char* regex, uint32_t flags);
-  summarizer& add_exception(const char* regex);
-
-  void process_token(const char* token);
-  void process_line();
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
 // stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -467,11 +390,7 @@ class splitter : public pass {
   std::vector<char*> group_storage;
   char* group_storage_next;
   char* group_storage_end;
-#ifdef use_unordered
   typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
-#else
-  typedef std::map<char*, std::vector<std::string>, multi_cstr_less> data_t;
-#endif
   data_t data;
 
 public:
@@ -746,6 +665,125 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// writer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class csv_writer_base : public pass {
+protected:
+  bool first_column;
+  std::streambuf* out;
+
+  csv_writer_base() : out(0) {}
+
+public:
+  void process_token(const char* token);
+  void process_line();
+};
+
+class csv_writer : public csv_writer_base {
+public:
+  csv_writer();
+  csv_writer(std::streambuf* out);
+  void init(std::streambuf* out);
+
+  void process_stream();
+};
+
+class csv_file_writer : public csv_writer_base {
+public:
+  csv_file_writer();
+  csv_file_writer(const char* filename);
+  void init(const char* filename);
+  ~csv_file_writer();
+
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// driver
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+void read_csv(std::streambuf* in, pass& out);
+void read_csv(const char* filename, pass& out);
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// stat.cpp
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// summarizer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+enum summarizer_flags {
+  SUM_MISSING =  0x0002,
+  SUM_COUNT =    0x0004,
+  SUM_SUM =      0x0008,
+  SUM_MIN =      0x0010,
+  SUM_MAX =      0x0020,
+  SUM_AVG =      0x0040,
+  SUM_VARIANCE = 0x0080,
+  SUM_STD_DEV =  0x0100
+};
+
+struct summarizer_data_t
+{
+  int missing;
+  int count;
+  double sum;
+  double sum_of_squares;
+  double min;
+  double max;
+
+  summarizer_data_t();
+};
+
+class summarizer : public pass {
+  pass* out;
+  std::vector<pcre*> group_regexes;
+  std::vector<std::pair<pcre*, uint32_t> > data_regexes;
+  std::vector<pcre*> exception_regexes;
+
+  bool first_line;
+  std::vector<uint32_t> column_flags;
+  size_t num_data_columns;
+
+  std::vector<uint32_t>::const_iterator cfi;
+  double* values;
+  double* vi;
+  char* group_tokens;
+  char* group_tokens_next;
+  char* group_tokens_end;
+
+  std::vector<char*> group_storage;
+  char* group_storage_next;
+  char* group_storage_end;
+  std::vector<summarizer_data_t*> data_storage;
+  summarizer_data_t* data_storage_next;
+  summarizer_data_t* data_storage_end;
+  typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  data_t data;
+
+public:
+  summarizer();
+  summarizer(pass& out);
+  summarizer& init();
+  summarizer& set_out(pass& out);
+  summarizer& init(pass& out);
+  ~summarizer();
+
+  summarizer& add_group(const char* regex);
+  summarizer& add_data(const char* regex, uint32_t flags);
+  summarizer& add_exception(const char* regex);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // variance_analyzer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -799,49 +837,6 @@ public:
   void process_stream();
 };
 
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// writer
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class csv_writer_base : public pass {
-protected:
-  bool first_column;
-  std::streambuf* out;
-
-  csv_writer_base() : out(0) {}
-
-public:
-  void process_token(const char* token);
-  void process_line();
-};
-
-class csv_writer : public csv_writer_base {
-public:
-  csv_writer();
-  csv_writer(std::streambuf* out);
-  void init(std::streambuf* out);
-
-  void process_stream();
-};
-
-class csv_file_writer : public csv_writer_base {
-public:
-  csv_file_writer();
-  csv_file_writer(const char* filename);
-  void init(const char* filename);
-  ~csv_file_writer();
-
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// driver
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-void read_csv(std::streambuf* in, pass& out);
-void read_csv(const char* filename, pass& out);
 
 }
 
