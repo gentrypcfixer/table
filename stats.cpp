@@ -1,4 +1,7 @@
 #include <stdexcept>
+#include <limits>
+#include <math.h>
+#include <stdio.h>
 #include "table.h"
 
 using namespace std;
@@ -6,9 +9,69 @@ using namespace std;
 
 namespace table {
 
+double gammln(double xx)
+{
+  const double cof[6] = {
+    76.18009172947146, -86.50532032941677,
+    24.01409824083091, -1.231739572450155,
+    0.1208650973866179e-2, -0.5395239384953e-5
+  };
+  double y = xx, x = xx;
+  double tmp = x + 5.5;
+  tmp -= (x + 0.5) * log(tmp);
+  double ser = 1.000000000190015;
+  for(int j = 0; j <= 5; ++j) ser += cof[j] / ++y;
+  return -tmp + log(2.5066282746310005 * ser / x);
+}
+
+double betacf(double a, double b, double x)
+{
+  const int MAXIT = 100;
+  const double EPS = 3.0e-7;
+  const double FPMIN = 1.0e-30;
+
+  double qab = a + b;
+  double qap = a + 1.0;
+  double qam = a - 1.0;
+  double c = 1.0;
+  double d = 1.0 - qab * x / qap;
+  if(fabs(d) < FPMIN) d = FPMIN;
+  d = 1.0 / d;
+  double h = d;
+  int m = 1;
+  for(; m <= MAXIT; m++) {
+    int m2 = 2 * m;
+    double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1.0 + aa * d;
+    if(fabs(d) < FPMIN) d = FPMIN;
+    c = 1.0 + aa / c;
+    if(fabs(c) < FPMIN) c = FPMIN;
+    d = 1.0 / d;
+    h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1.0 + aa * d;
+    if(fabs(d) < FPMIN) d = FPMIN;
+    c = 1.0 + aa / c;
+    if(fabs(c) < FPMIN) c = FPMIN;
+    d = 1.0 / d;
+    double del = d * c;
+    h *= del;
+    if(fabs(del - 1.0) < EPS) break;
+  }
+  if (m > MAXIT) throw runtime_error("a or b too big, or MAXIT too small in betacf");
+  return h;
+}
+
 static double ibeta(double a, double b, double x)
 {
-  return 0.0;
+  if(x < 0.0 || x > 1.0) throw runtime_error("Bad x in routine betai");
+
+  double bt = 0.0;
+  if(x != 0.0 && x != 1.0)
+    bt = exp(gammln(a + b) - gammln(a) - gammln(b) + a * log(x) + b * log(1.0 - x));
+
+  if(x < (a + 1.0) / (a + b + 2.0)) return bt * betacf(a, b, x) / a;
+  else return 1.0 - bt * betacf(b, a, 1.0 - x) / b;
 }
 
 
@@ -317,6 +380,7 @@ variance_analyzer::~variance_analyzer()
   for(vector<pcre*>::iterator i = exception_regexes.begin(); i != exception_regexes.end(); ++i) pcre_free(*i);
   delete[] group_tokens;
   delete[] values;
+  for(vector<variance_analyzer_treatment_data_t*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
 }
 
 variance_analyzer& variance_analyzer::init()
@@ -432,7 +496,7 @@ void variance_analyzer::process_line()
     groups_t::iterator gi = groups.find(group_tokens);
     if(gi == groups.end()) {
       size_t len = group_tokens_next - group_tokens;
-      if(len + 1 > size_t(group_storage_end - group_storage_next)) {
+      if(!group_storage_next || len + 1 > size_t(group_storage_end - group_storage_next)) {
         if(group_storage_next) *group_storage_next++ = '\x04';
         size_t cap = 256 * 1024;
         if(cap < len + 1) cap = len + 1;
@@ -465,7 +529,7 @@ void variance_analyzer::process_stream()
 {
   if(!out) throw runtime_error("variance_analyzer has no out");
 
-  *group_storage_next++ = '\x04';
+  if(group_storage_next) *group_storage_next++ = '\x04';
 
   out->process_token("keyword");
   vector<char*>::const_iterator gsi = group_storage.begin();

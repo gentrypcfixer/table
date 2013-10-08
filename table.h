@@ -8,6 +8,7 @@
 #include <vector>
 #include <pcre.h>
 #include <stdint.h>
+#include <string.h>
 
 
 namespace table {

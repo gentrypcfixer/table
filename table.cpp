@@ -1,6 +1,7 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <algorithm>
 #include "table.h"
 
 using namespace std;
@@ -1373,40 +1374,46 @@ void read_csv(streambuf* in, pass& out)
   int column = 0;
   bool blank = 1;
   char* buf = new char[4096];
-  char* next = buf;
-  char* end = buf + 4096;
-  while(1) {
-    int c = in->sbumpc();
-    if(char_traits<char>::eof() == c) break;
-    else if(c == '\n') {
-      if(!blank) {
+  try {
+    char* next = buf;
+    char* end = buf + 4096;
+    while(1) {
+      int c = in->sbumpc();
+      if(char_traits<char>::eof() == c) break;
+      else if(c == '\n') {
+        if(!blank) {
+          if(next >= end) resize_buffer(buf, next, end);
+          *next++ = '\0';
+          out.process_token(buf);
+          next = buf;
+          ++column;
+          if(first_line) { num_keys = column; first_line = 0; }
+          else if(column != num_keys) throw runtime_error("didn't get same number of tokens as first line");
+          out.process_line();
+          column = 0;
+          blank = 1;
+        }
+      }
+      else if(c == ',') {
         if(next >= end) resize_buffer(buf, next, end);
         *next++ = '\0';
         out.process_token(buf);
         next = buf;
         ++column;
-        if(first_line) { num_keys = column; first_line = 0; }
-        else if(column != num_keys) throw runtime_error("didn't get same number of tokens as first line");
-        out.process_line();
-        column = 0;
-        blank = 1;
+        blank = 0;
+      }
+      else {
+        if(next >= end) resize_buffer(buf, next, end);
+        *next++ = c;
+        blank = 0;
       }
     }
-    else if(c == ',') {
-      if(next >= end) resize_buffer(buf, next, end);
-      *next++ = '\0';
-      out.process_token(buf);
-      next = buf;
-      ++column;
-      blank = 0;
-    }
-    else {
-      if(next >= end) resize_buffer(buf, next, end);
-      *next++ = c;
-      blank = 0;
-    }
+    out.process_stream();
   }
-  out.process_stream();
+  catch(...) {
+    delete[] buf;
+    throw;
+  }
   delete[] buf;
 }
 

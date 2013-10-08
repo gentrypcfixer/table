@@ -31,9 +31,9 @@ table_stack.o : table.h
 table_split.o : table.h
 table_test.o : table.h
 
-table_stack : table.o
-table_split : table.o
-table_test : table.o
-
 libtable.a : stats.o
+
+table_stack : libtable.a
+table_split : libtable.a
+table_test : libtable.a
 
