@@ -9,7 +9,7 @@ using namespace std;
 
 namespace table {
 
-double gammln(double xx)
+static float gammln(float xx)
 {
   const double cof[6] = {
     76.18009172947146, -86.50532032941677,
@@ -24,54 +24,54 @@ double gammln(double xx)
   return -tmp + log(2.5066282746310005 * ser / x);
 }
 
-double betacf(double a, double b, double x)
+static float betacf(float a, float b, float x)
 {
   const int MAXIT = 100;
-  const double EPS = 3.0e-7;
-  const double FPMIN = 1.0e-30;
+  const float EPS = 3.0e-7;
+  const float FPMIN = 1.0e-30;
 
-  double qab = a + b;
-  double qap = a + 1.0;
-  double qam = a - 1.0;
-  double c = 1.0;
-  double d = 1.0 - qab * x / qap;
+  float qab = a + b;
+  float qap = a + 1.0f;
+  float qam = a - 1.0f;
+  float c = 1.0f;
+  float d = 1.0f - qab * x / qap;
   if(fabs(d) < FPMIN) d = FPMIN;
-  d = 1.0 / d;
-  double h = d;
+  d = 1.0f / d;
+  float h = d;
   int m = 1;
   for(; m <= MAXIT; m++) {
     int m2 = 2 * m;
-    double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
-    d = 1.0 + aa * d;
+    float aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1.0f + aa * d;
     if(fabs(d) < FPMIN) d = FPMIN;
-    c = 1.0 + aa / c;
+    c = 1.0f + aa / c;
     if(fabs(c) < FPMIN) c = FPMIN;
-    d = 1.0 / d;
+    d = 1.0f / d;
     h *= d * c;
     aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
-    d = 1.0 + aa * d;
+    d = 1.0f + aa * d;
     if(fabs(d) < FPMIN) d = FPMIN;
-    c = 1.0 + aa / c;
+    c = 1.0f + aa / c;
     if(fabs(c) < FPMIN) c = FPMIN;
-    d = 1.0 / d;
-    double del = d * c;
+    d = 1.0f / d;
+    float del = d * c;
     h *= del;
-    if(fabs(del - 1.0) < EPS) break;
+    if(fabs(del - 1.0f) < EPS) break;
   }
-  if (m > MAXIT) throw runtime_error("a or b too big, or MAXIT too small in betacf");
+  if(m > MAXIT) throw runtime_error("a or b too big, or MAXIT too small in betacf");
   return h;
 }
 
-static double ibeta(double a, double b, double x)
+static float ibeta(float a, float b, float x)
 {
-  if(x < 0.0 || x > 1.0) throw runtime_error("Bad x in routine betai");
+  if(x < 0.0f || x > 1.0f) throw runtime_error("Bad x in routine betai");
 
-  double bt = 0.0;
-  if(x != 0.0 && x != 1.0)
+  float bt = 0.0f;
+  if(x != 0.0f && x != 1.0f)
     bt = exp(gammln(a + b) - gammln(a) - gammln(b) + a * log(x) + b * log(1.0 - x));
 
-  if(x < (a + 1.0) / (a + b + 2.0)) return bt * betacf(a, b, x) / a;
-  else return 1.0 - bt * betacf(b, a, 1.0 - x) / b;
+  if(x < (a + 1.0f) / (a + b + 2.0f)) return bt * betacf(a, b, x) / a;
+  else return 1.0f - bt * betacf(b, a, 1.0f - x) / b;
 }
 
 
@@ -590,7 +590,11 @@ void variance_analyzer::process_stream()
       double sse = sst - sstr;
       double sse_df = (total_count - num_groups);
       double f = (sstr / sstr_df) / (sse / sse_df);
-      double p = ibeta(sstr_df / 2, sse_df / 2, (sstr_df * f) / (sstr_df * f + sse_df));
+      if(isnan(f))
+        f = numeric_limits<double>::infinity();
+      double p = 1.0;
+      if(f != numeric_limits<double>::infinity())
+        p = ibeta(sstr_df / 2, sse_df / 2, (sstr_df * f) / (sstr_df * f + sse_df));
 
       sprintf(group_tokens, "%f", total_sum / total_count); out->process_token(group_tokens);
       sprintf(group_tokens, "%f", sqrt(sst / (total_count - 1))); out->process_token(group_tokens);
