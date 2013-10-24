@@ -605,6 +605,8 @@ void variance_analyzer::process_stream()
       group_tokens[0] = '\0';
       out->process_token(group_tokens);
       out->process_token(group_tokens);
+      out->process_token(group_tokens);
+      out->process_token(group_tokens);
     }
 
     out->process_line();

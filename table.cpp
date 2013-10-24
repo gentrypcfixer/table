@@ -1310,55 +1310,68 @@ void base_converter::process_stream() { out->process_stream(); }
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+void csv_writer_base::base_init()
+{
+  out = 0;
+  line = 0;
+  num_columns = 0;
+  column = 0;
+}
+
 void csv_writer_base::process_token(const char* token)
 {
-  if(!first_column) out->sputc(',');
-  else {
-    if(!out) throw runtime_error("writer has no out");
-    first_column = 0;
-  }
+  if(column) out->sputc(',');
+  else if(!out) throw runtime_error("csv_writer has no out");
 
   for(const char* p = token; *p; ++p)
     out->sputc(*p);
+
+  ++column;
 }
 
 void csv_writer_base::process_line()
 {
-  if(!out) throw runtime_error("writer has no out");
+  if(!line) {
+    if(!out) throw runtime_error("csv_writer has no out");
+    num_columns = column;
+  }
+  else if(column != num_columns) {
+    stringstream msg; msg << "csv_writer: line " << line << " (zero's based) has " << column << " columns instead of " << num_columns;
+    throw runtime_error(msg.str());
+  }
+
   out->sputc('\n');
-  first_column = 1;
+  column = 0;
+  ++line;
 }
 
-
-csv_writer::csv_writer() {}
+csv_writer::csv_writer() { init(); }
 csv_writer::csv_writer(streambuf* out) { init(out); }
-
-void csv_writer::init(streambuf* out)
-{
-  this->out = out;
-  if(!out) throw runtime_error("writer::init null out");
-  first_column = 1;
-}
-
+csv_writer& csv_writer::init() { base_init(); return *this; }
+csv_writer& csv_writer::init(streambuf* out) { init(); return set_out(out); }
+csv_writer& csv_writer::set_out(streambuf* out) { if(!out) throw runtime_error("csv_writer::set_out null out"); this->out = out; return *this; }
 void csv_writer::process_stream() {}
 
-csv_file_writer::csv_file_writer() {}
+csv_file_writer::csv_file_writer() { init(); }
 csv_file_writer::csv_file_writer(const char* filename) { init(filename); }
+csv_file_writer& csv_file_writer::init() { delete out; base_init(); return *this; }
+csv_file_writer& csv_file_writer::init(const char* filename) { init(); return set_out(filename); }
 
-void csv_file_writer::init(const char* filename)
+csv_file_writer& csv_file_writer::set_out(const char* filename)
 {
+  if(!filename) throw runtime_error("csv_file_writer::set_out null filename");
+
   if(!out) out = new filebuf;
-  else ((filebuf*)out)->close();
+  filebuf* o = static_cast<filebuf*>(out);
+  if(o->is_open()) o->close();
+  if(!o->open(filename, ios_base::out | ios_base::trunc))
+    throw runtime_error("csv_file_writer can't open file");
 
-  if(!((filebuf*)out)->open(filename, ios_base::out | ios_base::trunc))
-    throw runtime_error("file_writer can't open file");
-
-  first_column = 1;
+  return *this;
 }
 
 csv_file_writer::~csv_file_writer() { delete out; }
-
-void csv_file_writer::process_stream() { ((filebuf*)out)->close(); }
+void csv_file_writer::process_stream() { delete out; out = 0; }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////

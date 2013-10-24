@@ -671,10 +671,13 @@ public:
 
 class csv_writer_base : public pass {
 protected:
-  bool first_column;
   std::streambuf* out;
+  int line;
+  int num_columns;
+  int column;
 
   csv_writer_base() : out(0) {}
+  void base_init();
 
 public:
   void process_token(const char* token);
@@ -685,7 +688,9 @@ class csv_writer : public csv_writer_base {
 public:
   csv_writer();
   csv_writer(std::streambuf* out);
-  void init(std::streambuf* out);
+  csv_writer& init();
+  csv_writer& init(std::streambuf* out);
+  csv_writer& set_out(std::streambuf* out);
 
   void process_stream();
 };
@@ -694,7 +699,9 @@ class csv_file_writer : public csv_writer_base {
 public:
   csv_file_writer();
   csv_file_writer(const char* filename);
-  void init(const char* filename);
+  csv_file_writer& init();
+  csv_file_writer& init(const char* filename);
+  csv_file_writer& set_out(const char* filename);
   ~csv_file_writer();
 
   void process_stream();
