@@ -11,6 +11,9 @@
 #include <string.h>
 
 
+extern "C" void  pcre_free_study(void *);
+
+
 namespace table {
 
 void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
@@ -500,40 +503,35 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// filter
+// substitutor
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class filter : public pass {
-  struct limits_t
-  {
-    double low_limit;
-    double high_limit;
-  };
-
-  struct regex_limits_t
+class substitutor : public pass {
+  struct sub_t
   {
     pcre* regex;
-    limits_t limits;
+    pcre* from;
+    pcre_extra* from_extra;
+    std::string to;
 
-    regex_limits_t() : regex(0) {}
-    ~regex_limits_t() { pcre_free(regex); }
+    sub_t() : regex(0), from(0), from_extra(0) {}
+    ~sub_t() { pcre_free_study(from_extra); pcre_free(from); pcre_free(regex); }
   };
 
   pass* out;
-  std::map<std::string, limits_t> keyword_limits;
-  std::vector<regex_limits_t> regex_limits;
+  std::vector<sub_t> subs;
+  std::vector<pcre*> exceptions;
   bool first_row;
   int column;
-  std::vector<std::pair<int, limits_t> > column_limits;
-  std::vector<std::pair<int, limits_t> >::const_iterator cli;
 
 public:
-  filter();
-  filter(pass& out);
-  filter& init();
-  filter& init(pass& out);
-  filter& set_out(pass& out);
-  filter& add(bool regex, const char* keyword, double low_limit, double high_limit);
+  substitutor();
+  substitutor(pass& out);
+  substitutor& init();
+  substitutor& init(pass& out);
+  substitutor& set_out(pass& out);
+  substitutor& add(const char* regex, const char* from, const char* to);
+  substitutor& add_exception(const char* regex);
 
   void process_token(const char* token);
   void process_line();
@@ -591,73 +589,6 @@ public:
   combiner& init(pass& out);
   combiner& set_out(pass& out);
   combiner& add_pair(const char* from, const char* to);
-
-  void process_token(const char* token);
-  void process_line();
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// differ
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class differ : public pass {
-  pass* out;
-  std::string base_key;
-  std::string comp_key;
-  std::string keyword;
-  bool first_row;
-  int base_column;
-  int comp_column;
-
-  int column;
-  bool blank;
-  double base_value;
-  double comp_value;
-
-public:
-  differ();
-  differ(pass& out, const char* base_key, const char* comp_key, const char* keyword);
-  ~differ();
-  void init(pass& out, const char* base_key, const char* comp_key, const char* keyword);
-
-  void process_token(const char* token);
-  void process_line();
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// base_converter
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class base_converter : public pass {
-  struct regex_base_conv_t
-  {
-    pcre* regex;
-    int from;
-    int to;
-
-    regex_base_conv_t() : regex(0) {}
-    ~regex_base_conv_t() { pcre_free(regex); }
-  };
-
-  pass* out;
-  std::vector<regex_base_conv_t> regex_base_conv;
-  bool first_row;
-  int column;
-  std::vector<int> from_base;
-  std::vector<int> to_base;
-
-public:
-  base_converter();
-  base_converter(pass& out, const char* regex, int from, int to);
-  ~base_converter();
-  base_converter& init();
-  base_converter& init(pass& out, const char* regex, int from, int to);
-  base_converter& set_out(pass& out);
-  base_converter& add_conv(const char* regex, int from, int to);
 
   void process_token(const char* token);
   void process_line();
@@ -784,6 +715,115 @@ public:
   summarizer& add_group(const char* regex);
   summarizer& add_data(const char* regex, uint32_t flags);
   summarizer& add_exception(const char* regex);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// filter
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class filter : public pass {
+  struct limits_t
+  {
+    double low_limit;
+    double high_limit;
+  };
+
+  struct regex_limits_t
+  {
+    pcre* regex;
+    limits_t limits;
+
+    regex_limits_t() : regex(0) {}
+    ~regex_limits_t() { pcre_free(regex); }
+  };
+
+  pass* out;
+  std::map<std::string, limits_t> keyword_limits;
+  std::vector<regex_limits_t> regex_limits;
+  bool first_row;
+  int column;
+  std::vector<std::pair<int, limits_t> > column_limits;
+  std::vector<std::pair<int, limits_t> >::const_iterator cli;
+
+public:
+  filter();
+  filter(pass& out);
+  filter& init();
+  filter& init(pass& out);
+  filter& set_out(pass& out);
+  filter& add(bool regex, const char* keyword, double low_limit, double high_limit);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// differ
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class differ : public pass {
+  pass* out;
+  std::string base_key;
+  std::string comp_key;
+  std::string keyword;
+  bool first_row;
+  int base_column;
+  int comp_column;
+
+  int column;
+  bool blank;
+  double base_value;
+  double comp_value;
+
+public:
+  differ();
+  differ(pass& out, const char* base_key, const char* comp_key, const char* keyword);
+  ~differ();
+  void init(pass& out, const char* base_key, const char* comp_key, const char* keyword);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// base_converter
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class base_converter : public pass {
+  struct regex_base_conv_t
+  {
+    pcre* regex;
+    int from;
+    int to;
+
+    regex_base_conv_t() : regex(0) {}
+    ~regex_base_conv_t() { pcre_free(regex); }
+  };
+
+  pass* out;
+  std::vector<regex_base_conv_t> regex_base_conv;
+  bool first_row;
+  int column;
+  std::vector<int> from_base;
+  std::vector<int> to_base;
+
+public:
+  base_converter();
+  base_converter(pass& out, const char* regex, int from, int to);
+  ~base_converter();
+  base_converter& init();
+  base_converter& init(pass& out, const char* regex, int from, int to);
+  base_converter& set_out(pass& out);
+  base_converter& add_conv(const char* regex, int from, int to);
 
   void process_token(const char* token);
   void process_line();

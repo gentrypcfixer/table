@@ -26,12 +26,12 @@ lib%.a : %.o
 
 
 table.o : table.h
-stats.o : table.h
+numeric.o : table.h
 table_stack.o : table.h
 table_split.o : table.h
 table_test.o : table.h
 
-libtable.a : stats.o
+libtable.a : numeric.o
 
 table_stack : libtable.a
 table_split : libtable.a
