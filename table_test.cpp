@@ -97,18 +97,30 @@ int main(int argc, char * argv[])
     //filter f(w);
     //f.add(1, "V20_OFFSET", -100.0, 30000.0);
 
-    variance_analyzer a(w);
-    a.add_group("^LOT$");
-    a.add_group("^WAFER$");
-    a.add_exception("^ROW$");
-    a.add_exception("^COL$");
-    a.add_exception("^WAFSIZE$");
-    a.add_exception("^Process_id$");
-    a.add_exception("^Fail_bin$");
-    a.add_exception("^Error_bin$");
-    a.add_group("^Group$");
-    a.add_exception("^MAP_REV$");
-    a.add_data(".*");
+    //variance_analyzer a(w);
+    //a.add_group("^LOT$");
+    //a.add_group("^WAFER$");
+    //a.add_exception("^ROW$");
+    //a.add_exception("^COL$");
+    //a.add_exception("^WAFSIZE$");
+    //a.add_exception("^Process_id$");
+    //a.add_exception("^Fail_bin$");
+    //a.add_exception("^Error_bin$");
+    //a.add_group("^Group$");
+    //a.add_exception("^MAP_REV$");
+    //a.add_data(".*");
+
+    substitutor sb(w);
+    sb.add_exception("^LOT$");
+    sb.add_exception("^WAFER$");
+    sb.add_exception("^ROW$");
+    sb.add_exception("^COL$");
+    sb.add_exception("^WAFSIZE$");
+    sb.add_exception("^Process_id$");
+    sb.add_exception("^Fail_bin$");
+    sb.add_exception("^Error_bin$");
+    sb.add_exception("^Group$");
+    sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -165,7 +177,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(w);
 
-    read_csv("raw.csv", a);
+    read_csv("raw.csv", sb);
 
     //row_joiner rj(w);
 

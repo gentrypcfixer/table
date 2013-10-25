@@ -11,7 +11,10 @@
 #include <string.h>
 
 
-extern "C" void  pcre_free_study(void *);
+#if(PCRE_MAJOR < 8 || (PCRE_MAJOR == 8 && PCRE_MINOR < 20))
+#define PCRE_STUDY_JIT_COMPILE 0
+inline void pcre_free_study(void *p) { free(p); }
+#endif
 
 
 namespace table {
@@ -521,12 +524,16 @@ class substitutor : public pass {
   pass* out;
   std::vector<sub_t> subs;
   std::vector<pcre*> exceptions;
-  bool first_row;
+  std::vector<sub_t*> column_subs;
+  bool first_line;
   int column;
+  char* buf;
+  char* end;
 
 public:
   substitutor();
   substitutor(pass& out);
+  ~substitutor();
   substitutor& init();
   substitutor& init(pass& out);
   substitutor& set_out(pass& out);

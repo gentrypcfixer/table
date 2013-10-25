@@ -797,6 +797,146 @@ void row_joiner::process()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// substitutor
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+substitutor::substitutor() : buf(0) { init(); }
+substitutor::substitutor(pass& out) : buf(0) { init(out); }
+
+substitutor::~substitutor()
+{
+  for(vector<pcre*>::iterator i = exceptions.begin(); i != exceptions.end(); ++i) pcre_free(*i);
+  delete[] buf;
+}
+
+substitutor& substitutor::init()
+{
+  out = 0;
+  subs.clear();
+  for(vector<pcre*>::iterator i = exceptions.begin(); i != exceptions.end(); ++i) pcre_free(*i);
+  exceptions.clear();
+  column_subs.clear();
+  first_line = 1;
+  column = 0;
+  delete[] buf;
+  buf = new char[2048];
+  end = buf + 2048;
+  return *this;
+}
+
+substitutor& substitutor::init(pass& out) { init(); return set_out(out); }
+substitutor& substitutor::set_out(pass& out) { this->out = &out; return *this; }
+
+substitutor& substitutor::add(const char* regex, const char* from, const char* to)
+{
+  subs.resize(subs.size() + 1);
+
+  const char* err; int err_off;
+  pcre* pr = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!pr) throw runtime_error("substitutor can't compile regex");
+  subs.back().regex = pr;
+
+  pcre* pf = pcre_compile(from, 0, &err, &err_off, 0);
+  if(!pf) throw runtime_error("substitutor can't compile from regex");
+  subs.back().from = pf;
+
+  pcre_extra* pfe = pcre_study(pf, PCRE_STUDY_JIT_COMPILE, &err);
+  if(!pf) throw runtime_error("substitutor can't study from");
+  subs.back().from_extra = pfe;
+
+  subs.back().to = to;
+
+  return *this;
+}
+
+substitutor& substitutor::add_exception(const char* key)
+{
+  const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("substitutor can't compile exception regex");
+  exceptions.push_back(p);
+  return *this;
+}
+
+void substitutor::process_token(const char* token)
+{
+  if(first_line) {
+    sub_t* s = 0;
+    size_t len = strlen(token);
+    for(vector<sub_t>::iterator si = subs.begin(); si != subs.end(); ++si) {
+      int ovector[30]; int rc = pcre_exec((*si).regex, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { s = &(*si); break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor column match error");
+    }
+    if(s) {
+      for(vector<pcre*>::const_iterator ei = exceptions.begin(); ei != exceptions.end(); ++ei) {
+        int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { s = 0; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor exception match error");
+      }
+    }
+    column_subs.push_back(s);
+    out->process_token(token);
+  }
+  else {
+    sub_t* s = column_subs[column];
+    if(!s) out->process_token(token);
+    else {
+      size_t len = strlen(token);
+      int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, token, len, 0, 0, ovector, 30);
+      if(rc < 0) {
+        if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor exception match error");
+        out->process_token(token);
+      }
+      else {
+        char* next = buf;
+        if(!rc) rc = 10;
+        for(const char* tp = s->to.c_str(); 1; ++tp) {
+          int br = 10;
+          if(*tp == '\\' && isdigit(*(tp + 1))) br = *(tp + 1) - '0';
+          if(br < rc) {
+            const char* cs = token + ovector[br * 2];
+            const char* ce = token + ovector[br * 2 + 1];
+            while(cs < ce) {
+              if(next >= end) resize_buffer(buf, next, end);
+              *next++ = *cs++;
+            }
+            ++tp;
+          }
+          else {
+            if(next >= end) resize_buffer(buf, next, end);
+            *next++ = *tp;
+            if(!*tp) break;
+          }
+        }
+        out->process_token(buf);
+      }
+    }
+  }
+
+  ++column;
+}
+
+void substitutor::process_line()
+{
+  if(first_line) {
+    if(!out) throw runtime_error("substitutor has no out");
+    first_line = 0;
+  }
+
+  out->process_line();
+  column = 0;
+}
+
+void substitutor::process_stream()
+{
+  if(!out) throw runtime_error("substitutor has no out");
+  delete[] buf;
+  buf = 0;
+  out->process_stream();
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // col_pruner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
