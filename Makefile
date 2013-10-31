@@ -1,8 +1,17 @@
+PCRE_DIR = $(HOME)/source/pcre-8.33
+
+LIB_TYPE = SHARED
+
 CPP = /usr/bin/g++
-CPPFLAGS = -Wall
-CPPFLAGS += -g
+CPPFLAGS_STATIC = -I$(PCRE_DIR)
+CPPFLAGS = $(CPPFLAGS_$(LIB_TYPE))
+CPPFLAGS += -Wall
+#CPPFLAGS += -g
 CPPFLAGS += -O2
-LDFLAGS = -lpcre
+
+LDFLAGS_SHARED = -lpcre
+LDFLAGS_STATIC = -static -L$(PCRE_DIR)/.libs -lpcre -lpthread
+LDFLAGS = $(LDFLAGS_$(LIB_TYPE))
 
 AR = ar
 ARFLAGS = rcs
