@@ -802,6 +802,56 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// bumper
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class bumper : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    bool sub;
+    size_t off_column_index;
+
+    inst_t() : regex(0) {}
+    ~inst_t() { pcre_free(regex); }
+  };
+
+  struct val_t
+  {
+    size_t column;
+    inst_t* inst;
+  };
+
+  pass* out;
+  std::map<std::string, inst_t> insts;
+
+  bool first_line;
+  std::vector<std::string> val_keys;
+  std::vector<size_t> off_columns;
+  std::vector<val_t> val_columns;
+
+  size_t column;
+  size_t oci;
+  size_t vci;
+  double* offsets;
+  double* values;
+
+public:
+  bumper();
+  bumper(pass& out);
+  ~bumper();
+  bumper& init();
+  bumper& init(pass& out);
+  bumper& set_out(pass& out);
+  bumper& add(const char* offset_key, const char* keys_to_offset_regex, bool sub = 0);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // base_converter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -521,6 +521,141 @@ void differ::process_stream()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// bumper
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+bumper::bumper() : values(0) { init(); }
+bumper::bumper(pass& out) : values(0) { init(out); }
+bumper::~bumper() { delete[] offsets; delete[] values; }
+
+bumper& bumper::init()
+{
+  out = 0;
+  insts.clear();
+  first_line = 1;
+  val_keys.clear();
+  off_columns.clear();
+  val_columns.clear();
+  column = 0;
+  oci = 0;
+  vci = 0;
+  delete[] offsets; offsets = 0;
+  delete[] values; values = 0;
+
+  return *this;
+}
+
+bumper& bumper::init(pass& out) { init(); return set_out(out); }
+bumper& bumper::set_out(pass& out) { this->out = &out; return *this; }
+
+bumper& bumper::add(const char* offset_key, const char* keys_to_offset_regex, bool sub)
+{
+  if(offset_key == 0) throw runtime_error("invalid offset_key");
+  if(keys_to_offset_regex == 0) throw runtime_error("invalid keys_to_offset_regex");
+
+  const char* err; int err_off; pcre* p = pcre_compile(keys_to_offset_regex, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("bumper can't compile keys_to_offset_regex");
+
+  map<string, inst_t>::iterator i = insts.find(offset_key);
+  if(i != insts.end()) {
+    i = insts.insert(map<string, inst_t>::value_type(offset_key, inst_t())).first;
+  }
+  (*i).second.regex = p;
+  (*i).second.sub = sub;
+  (*i).second.off_column_index = numeric_limits<size_t>::max();
+
+  return *this;
+}
+
+
+void bumper::process_token(const char* token)
+{
+  if(first_line) {
+    if(!out) throw runtime_error("bumper has no out");
+    map<string, inst_t>::iterator i = insts.find(token);
+    if(i != insts.end()) {
+      (*i).second.off_column_index = off_columns.size();
+      off_columns.push_back(column);
+      out->process_token(token);
+    }
+    else {
+      size_t len = strlen(token);
+      for(i = insts.begin(); i != insts.end(); ++i) {
+        int ovector[30]; int rc = pcre_exec((*i).second.regex, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) {
+          val_keys.push_back(token);
+          val_columns.resize(val_columns.size() + 1);
+          val_columns.back().column = column;
+          val_columns.back().inst = &(*i).second;
+          break;
+        }
+        else {
+          if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("bumper match error");
+          else out->process_token(token);
+        }
+      }
+    }
+  }
+  else {
+    if(oci < off_columns.size() && column == off_columns[oci]) {
+      char* next = 0; offsets[oci] = strtod(token, &next);
+      if(next == token) offsets[oci] = numeric_limits<double>::quiet_NaN();
+      out->process_token(token);
+      ++oci;
+    }
+    else if(vci < val_columns.size() && column == val_columns[vci].column) {
+      char* next = 0; values[vci] = strtod(token, &next);
+      if(next == token) values[vci] = numeric_limits<double>::quiet_NaN();
+      ++vci;
+    }
+    else out->process_token(token);
+  }
+
+  ++column;
+}
+
+void bumper::process_line()
+{
+  if(first_line) {
+    if(!out) throw runtime_error("bumper has no out");
+
+    first_line = 0;
+
+    for(vector<string>::iterator i = val_keys.begin(); i != val_keys.end(); ++i) out->process_token((*i).c_str());
+    val_keys.clear();
+
+    offsets = new double[off_columns.size()];
+    values = new double[val_columns.size()];
+  }
+  else {
+    for(vci = 0; vci < val_columns.size(); ++vci) {
+      double v = values[vci];
+      if(isnan(v)) out->process_token("");
+      else {
+        const inst_t& inst = *val_columns[vci].inst;
+        double o = inst.off_column_index < off_columns.size() ? offsets[inst.off_column_index] : numeric_limits<double>::quiet_NaN();
+        if(!isnan(o)) v = inst.sub ? v - o : v + o;
+
+        char buf[32];
+        sprintf(buf, "%f", v);
+        out->process_token(buf);
+      }
+    }
+  }
+  out->process_line();
+  column = 0;
+  oci = 0;
+  vci = 0;
+}
+
+void bumper::process_stream()
+{
+  if(!out) throw runtime_error("bumper has no out");
+  out->process_stream();
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // base_converter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
