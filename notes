@@ -1,0 +1,5 @@
+get rid of cstring_queue
+sorter
+threader
+table dimentions at read_csv and write_csv
+check allocations
