@@ -1,8 +1,11 @@
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
 #include "table.h"
+
+#undef TABLE_DIMENSIONS_DEBUG_PRINTS
 
 using namespace std;
 using namespace std::tr1;
@@ -1252,7 +1255,13 @@ csv_writer::csv_writer(streambuf* out) { init(out); }
 csv_writer& csv_writer::init() { base_init(); return *this; }
 csv_writer& csv_writer::init(streambuf* out) { init(); return set_out(out); }
 csv_writer& csv_writer::set_out(streambuf* out) { if(!out) throw runtime_error("csv_writer::set_out null out"); this->out = out; return *this; }
-void csv_writer::process_stream() {}
+
+void csv_writer::process_stream()
+{
+#ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
+  cerr << "csv_writer saw dimensions of " << num_columns << " by " << line << endl;
+#endif
+}
 
 csv_file_writer::csv_file_writer() { init(); }
 csv_file_writer::csv_file_writer(const char* filename) { init(filename); }
@@ -1273,7 +1282,13 @@ csv_file_writer& csv_file_writer::set_out(const char* filename)
 }
 
 csv_file_writer::~csv_file_writer() { delete out; }
-void csv_file_writer::process_stream() { delete out; out = 0; }
+
+void csv_file_writer::process_stream() {
+#ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
+  cerr << "csv_file_writer saw dimensions of " << num_columns << " by " << line << endl;
+#endif
+  delete out; out = 0;
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1284,9 +1299,9 @@ void read_csv(streambuf* in, pass& out)
 {
   if(!in) throw runtime_error("read_csv got a null in");
 
-  bool first_line = 1;
-  int num_keys = 0;
-  int column = 0;
+  size_t line = 0;
+  size_t num_keys = 0;
+  size_t column = 0;
   bool blank = 1;
   char* buf = new char[4096];
   try {
@@ -1302,9 +1317,10 @@ void read_csv(streambuf* in, pass& out)
           out.process_token(buf);
           next = buf;
           ++column;
-          if(first_line) { num_keys = column; first_line = 0; }
+          if(!line) { num_keys = column; }
           else if(column != num_keys) throw runtime_error("didn't get same number of tokens as first line");
           out.process_line();
+          ++line;
           column = 0;
           blank = 1;
         }
@@ -1323,6 +1339,9 @@ void read_csv(streambuf* in, pass& out)
         blank = 0;
       }
     }
+#ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
+    cerr << "read_csv saw dimensions of " << num_keys << " by " << line << endl;
+#endif
     out.process_stream();
   }
   catch(...) {
