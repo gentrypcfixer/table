@@ -655,7 +655,91 @@ void read_csv(const char* filename, pass& out);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// stat.cpp
+// numeric templates
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// unary_modifier
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename UnaryOperation> class unary_modifier : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    UnaryOperation unary_op;
+
+    inst_t() : regex(0) {}
+    ~inst_t() { pcre_free(regex); }
+  };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  int column;
+  std::vector<UnaryOperation*> column_insts;
+
+public:
+  unary_modifier();
+  unary_modifier(pass& out);
+  unary_modifier& init();
+  unary_modifier& init(pass& out);
+  unary_modifier& set_out(pass& out);
+  unary_modifier& add(const char* regex, const UnaryOperation& unary_op);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// unary_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename UnaryOperation> class unary_adder : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    std::string new_key;
+    UnaryOperation unary_op;
+
+    inst_t() : regex(0) {}
+    ~inst_t() { pcre_free(regex); }
+  };
+
+  struct col_t
+  {
+    size_t col;
+    double val;
+    UnaryOperation* unary_op;
+    std::string new_key;
+  };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  size_t column;
+  char* buf;
+  char* end;
+  std::vector<col_t> columns;
+  typename std::vector<col_t>::iterator ci;
+
+public:
+  unary_adder();
+  unary_adder(pass& out);
+  unary_adder& init();
+  unary_adder& init(pass& out);
+  unary_adder& set_out(pass& out);
+  unary_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// numeric.cpp
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -722,48 +806,6 @@ public:
   summarizer& add_group(const char* regex);
   summarizer& add_data(const char* regex, uint32_t flags);
   summarizer& add_exception(const char* regex);
-
-  void process_token(const char* token);
-  void process_line();
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// filter
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class filter : public pass {
-  struct limits_t
-  {
-    double low_limit;
-    double high_limit;
-  };
-
-  struct regex_limits_t
-  {
-    pcre* regex;
-    limits_t limits;
-
-    regex_limits_t() : regex(0) {}
-    ~regex_limits_t() { pcre_free(regex); }
-  };
-
-  pass* out;
-  std::map<std::string, limits_t> keyword_limits;
-  std::vector<regex_limits_t> regex_limits;
-  bool first_row;
-  int column;
-  std::vector<std::pair<int, limits_t> > column_limits;
-  std::vector<std::pair<int, limits_t> >::const_iterator cli;
-
-public:
-  filter();
-  filter(pass& out);
-  filter& init();
-  filter& init(pass& out);
-  filter& set_out(pass& out);
-  filter& add(bool regex, const char* keyword, double low_limit, double high_limit);
 
   void process_token(const char* token);
   void process_line();
@@ -945,6 +987,8 @@ public:
 
 }
 
+
+#include "numeric_imp.h"
 
 #endif
 

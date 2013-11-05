@@ -34,11 +34,11 @@ lib%.a : %.o
 	$(CPP) -c $(CPPFLAGS) $< -o $@
 
 
-table.o : table.h
-numeric.o : table.h
-table_stack.o : table.h
-table_split.o : table.h
-table_test.o : table.h
+table.o : table.h numeric_imp.h
+numeric.o : table.h numeric_imp.h
+table_stack.o : table.h numeric_imp.h
+table_split.o : table.h numeric_imp.h
+table_test.o : table.h numeric_imp.h
 
 libtable.a : numeric.o
 

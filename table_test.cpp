@@ -76,6 +76,11 @@ void calculator::process_line()
   column = 0;
 }
 
+double filter(double i)
+{
+  if(!isnan(i) && (i < -500.0 || i > 500.0)) return numeric_limits<double>::quiet_NaN();
+  else return i;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // main
@@ -94,8 +99,11 @@ int main(int argc, char * argv[])
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    //filter f(w);
-    //f.add(1, "V20_OFFSET", -100.0, 30000.0);
+    //unary_modify<double (*)(double)> um(w);
+    //um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
+
+    unary_adder<double (*)(double)> ua(w);
+    ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
@@ -110,17 +118,17 @@ int main(int argc, char * argv[])
     //a.add_exception("^MAP_REV$");
     //a.add_data(".*");
 
-    substitutor sb(w);
-    sb.add_exception("^LOT$");
-    sb.add_exception("^WAFER$");
-    sb.add_exception("^ROW$");
-    sb.add_exception("^COL$");
-    sb.add_exception("^WAFSIZE$");
-    sb.add_exception("^Process_id$");
-    sb.add_exception("^Fail_bin$");
-    sb.add_exception("^Error_bin$");
-    sb.add_exception("^Group$");
-    sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
+    //substitutor sb(w);
+    //sb.add_exception("^LOT$");
+    //sb.add_exception("^WAFER$");
+    //sb.add_exception("^ROW$");
+    //sb.add_exception("^COL$");
+    //sb.add_exception("^WAFSIZE$");
+    //sb.add_exception("^Process_id$");
+    //sb.add_exception("^Fail_bin$");
+    //sb.add_exception("^Error_bin$");
+    //sb.add_exception("^Group$");
+    //sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -177,7 +185,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(w);
 
-    read_csv("raw.csv", sb);
+    read_csv("raw.csv", ua);
 
     //row_joiner rj(w);
 
