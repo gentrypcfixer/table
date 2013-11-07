@@ -20,6 +20,7 @@ inline void pcre_free_study(void *p) { free(p); }
 namespace table {
 
 void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
+void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end);
 
 struct cstr_less {
   bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
@@ -739,6 +740,49 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// binary_modifier
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename BinaryOperation> class binary_modifier : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    std::string other_key;
+    BinaryOperation binary_op;
+
+    inst_t() : regex(0) {}
+    ~inst_t() { pcre_free(regex); }
+  };
+
+  struct col_info_t { size_t index; bool passthrough; };
+  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
+  struct col_t { size_t col; double val; bool passthrough; };
+  struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  size_t column;
+  std::vector<std::string> keys;
+  std::vector<col_t> columns;
+  typename std::vector<col_t>::iterator ci;
+  std::vector<new_col_t> new_columns;
+
+public:
+  binary_modifier();
+  binary_modifier(pass& out);
+  binary_modifier& init();
+  binary_modifier& init(pass& out);
+  binary_modifier& set_out(pass& out);
+  binary_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // numeric.cpp
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -836,56 +880,6 @@ public:
   differ(pass& out, const char* base_key, const char* comp_key, const char* keyword);
   ~differ();
   void init(pass& out, const char* base_key, const char* comp_key, const char* keyword);
-
-  void process_token(const char* token);
-  void process_line();
-  void process_stream();
-};
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// bumper
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class bumper : public pass {
-  struct inst_t
-  {
-    pcre* regex;
-    bool sub;
-    size_t off_column_index;
-
-    inst_t() : regex(0) {}
-    ~inst_t() { pcre_free(regex); }
-  };
-
-  struct val_t
-  {
-    size_t column;
-    inst_t* inst;
-  };
-
-  pass* out;
-  std::map<std::string, inst_t> insts;
-
-  bool first_line;
-  std::vector<std::string> val_keys;
-  std::vector<size_t> off_columns;
-  std::vector<val_t> val_columns;
-
-  size_t column;
-  size_t oci;
-  size_t vci;
-  double* offsets;
-  double* values;
-
-public:
-  bumper();
-  bumper(pass& out);
-  ~bumper();
-  bumper& init();
-  bumper& init(pass& out);
-  bumper& set_out(pass& out);
-  bumper& add(const char* offset_key, const char* keys_to_offset_regex, bool sub = 0);
 
   void process_token(const char* token);
   void process_line();

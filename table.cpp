@@ -30,6 +30,29 @@ void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end)
 }
 
 
+void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end)
+{
+  for(const char* rp = replace_with; 1; ++rp) {
+    int backref = numeric_limits<int>::max();
+    if(*rp == '\\' && isdigit(*(rp + 1))) backref = *(rp + 1) - '0';
+    if(backref < num_captured) {
+      const char* cs = token + ovector[backref * 2];
+      const char* ce = token + ovector[backref * 2 + 1];
+      while(cs < ce) {
+        if(next >= end) resize_buffer(buf, next, end);
+        *next++ = *cs++;
+      }
+      ++rp;
+    }
+    else {
+      if(next >= end) resize_buffer(buf, next, end);
+      *next++ = *rp;
+      if(!*rp) break;
+    }
+  }
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
 ////////////////////////////////////////////////////////////////////////////////////////////////

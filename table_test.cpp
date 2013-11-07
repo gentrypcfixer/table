@@ -82,6 +82,11 @@ double filter(double i)
   else return i;
 }
 
+double sum(double a, double b)
+{
+  return a + b;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -104,6 +109,9 @@ int main(int argc, char * argv[])
 
     unary_adder<double (*)(double)> ua(w);
     ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
+
+    //binary_modifier<double (*)(double, double)> bm(w);
+    //bm.add("(BIN_OM_INIT_GOOD_MBLKS_PLANE)0", "\\11", sum);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
