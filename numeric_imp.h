@@ -307,9 +307,12 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
   else {
     for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
       double val = (*(*i).binary_op)(columns[(*i).col_index].val, columns[(*i).other_col_index].val);
-      char buf[32];
-      sprintf(buf, "%f", val);
-      out->process_token(buf);
+      if(isnan(val)) out->process_token("");
+      else {
+        char buf[32];
+        sprintf(buf, "%f", val);
+        out->process_token(buf);
+      }
     }
   }
   out->process_line();
