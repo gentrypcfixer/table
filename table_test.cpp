@@ -110,8 +110,8 @@ int main(int argc, char * argv[])
     //unary_col_adder<double (*)(double)> ua(w);
     //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
-    binary_col_modifier<double (*)(double, double)> bm(w);
-    bm.add("(BIN_OM_INIT_GOOD_MBLKS_PLANE)0", "\\11", sum);
+    //binary_col_modifier<double (*)(double, double)> bm(w);
+    //bm.add("(BIN_OM_INIT_GOOD_MBLKS_PLANE)0", "\\11", sum);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
@@ -137,6 +137,18 @@ int main(int argc, char * argv[])
     //sb.add_exception("^Error_bin$");
     //sb.add_exception("^Group$");
     //sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
+
+    col_adder ca(w);
+    ca.add_exception("^LOT$");
+    ca.add_exception("^WAFER$");
+    ca.add_exception("^ROW$");
+    ca.add_exception("^COL$");
+    ca.add_exception("^WAFSIZE$");
+    ca.add_exception("^Process_id$");
+    ca.add_exception("^Fail_bin$");
+    ca.add_exception("^Error_bin$");
+    ca.add_exception("^Group$");
+    ca.add(".*", "\\0_NEW", "^(\\d)(\\d+)$", "\\1.\\2");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -193,7 +205,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(w);
 
-    read_csv("raw.csv", bm);
+    read_csv("raw.csv", ca);
 
     //row_joiner rj(w);
 

@@ -945,6 +945,139 @@ void substitutor::process_stream()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// col_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+col_adder::col_adder() : buf(0) { init(); }
+col_adder::col_adder(pass& out) : buf(0) { init(out); }
+
+col_adder::~col_adder()
+{
+  for(vector<pcre*>::iterator i = exceptions.begin(); i != exceptions.end(); ++i) pcre_free(*i);
+  delete[] buf;
+}
+
+col_adder& col_adder::init()
+{
+  out = 0;
+  subs.clear();
+  for(vector<pcre*>::iterator i = exceptions.begin(); i != exceptions.end(); ++i) pcre_free(*i);
+  exceptions.clear();
+  column_subs.clear();
+  first_line = 1;
+  column = 0;
+  delete[] buf;
+  buf = new char[2048];
+  end = buf + 2048;
+  return *this;
+}
+
+col_adder& col_adder::init(pass& out) { init(); return set_out(out); }
+col_adder& col_adder::set_out(pass& out) { this->out = &out; return *this; }
+
+col_adder& col_adder::add(const char* regex, const char* new_key, const char* from, const char* to)
+{
+  subs.resize(subs.size() + 1);
+
+  const char* err; int err_off;
+  pcre* pr = pcre_compile(regex, 0, &err, &err_off, 0);
+  if(!pr) throw runtime_error("col_adder can't compile regex");
+  subs.back().regex = pr;
+
+  subs.back().new_key = new_key;
+
+  pcre* pf = pcre_compile(from, 0, &err, &err_off, 0);
+  if(!pf) throw runtime_error("col_adder can't compile from regex");
+  subs.back().from = pf;
+
+  pcre_extra* pfe = pcre_study(pf, PCRE_STUDY_JIT_COMPILE, &err);
+  if(!pf) throw runtime_error("col_adder can't study from");
+  subs.back().from_extra = pfe;
+
+  subs.back().to = to;
+
+  return *this;
+}
+
+col_adder& col_adder::add_exception(const char* key)
+{
+  const char* err; int err_off; pcre* p = pcre_compile(key, 0, &err, &err_off, 0);
+  if(!p) throw runtime_error("col_adder can't compile exception regex");
+  exceptions.push_back(p);
+  return *this;
+}
+
+void col_adder::process_token(const char* token)
+{
+  if(first_line) {
+    sub_t* s = 0;
+    size_t len = strlen(token);
+    int ovector[30];
+    int rc = 0;
+    for(vector<sub_t>::iterator si = subs.begin(); si != subs.end(); ++si) {
+      rc = pcre_exec((*si).regex, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { s = &(*si); break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder column match error");
+    }
+    if(s) {
+      for(vector<pcre*>::const_iterator ei = exceptions.begin(); ei != exceptions.end(); ++ei) {
+        int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { s = 0; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder exception match error");
+      }
+    }
+    column_subs.push_back(s);
+    out->process_token(token);
+    if(s) {
+      char* next = buf;
+      if(!rc) rc = 10;
+      generate_substitution(token, s->new_key.c_str(), ovector, rc, buf, next, end);
+      out->process_token(buf);
+    }
+  }
+  else {
+    sub_t* s = column_subs[column];
+    out->process_token(token);
+    if(s) {
+      size_t len = strlen(token);
+      int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, token, len, 0, 0, ovector, 30);
+      if(rc < 0) {
+        if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder exception match error");
+        out->process_token(token);
+      }
+      else {
+        char* next = buf;
+        if(!rc) rc = 10;
+        generate_substitution(token, s->to.c_str(), ovector, rc, buf, next, end);
+        out->process_token(buf);
+      }
+    }
+  }
+
+  ++column;
+}
+
+void col_adder::process_line()
+{
+  if(first_line) {
+    if(!out) throw runtime_error("col_adder has no out");
+    first_line = 0;
+  }
+
+  out->process_line();
+  column = 0;
+}
+
+void col_adder::process_stream()
+{
+  if(!out) throw runtime_error("col_adder has no out");
+  delete[] buf;
+  buf = 0;
+  out->process_stream();
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // col_pruner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 

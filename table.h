@@ -548,6 +548,48 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// col_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class col_adder : public pass {
+  struct sub_t
+  {
+    pcre* regex;
+    std::string new_key;
+    pcre* from;
+    pcre_extra* from_extra;
+    std::string to;
+
+    sub_t() : regex(0), from(0), from_extra(0) {}
+    ~sub_t() { pcre_free_study(from_extra); pcre_free(from); pcre_free(regex); }
+  };
+
+  pass* out;
+  std::vector<sub_t> subs;
+  std::vector<pcre*> exceptions;
+  std::vector<sub_t*> column_subs;
+  bool first_line;
+  int column;
+  char* buf;
+  char* end;
+
+public:
+  col_adder();
+  col_adder(pass& out);
+  ~col_adder();
+  col_adder& init();
+  col_adder& init(pass& out);
+  col_adder& set_out(pass& out);
+  col_adder& add(const char* regex, const char* new_key, const char* from, const char* to);
+  col_adder& add_exception(const char* regex);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // col_pruner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
