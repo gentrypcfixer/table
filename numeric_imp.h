@@ -2,6 +2,7 @@
 #define numeric_imp_h_
 
 #include <stdexcept>
+#include <sstream>
 #include <limits>
 #include <math.h>
 #include <stdio.h>
@@ -261,15 +262,17 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
           if(!rc) rc = 10;
           generate_substitution(keys[column].c_str(), (*ii).other_key.c_str(), ovector, rc, buf, next, end);
           vector<string>::iterator ki = find(keys.begin(), keys.end(), buf);
-          if(ki != keys.end()) { 
-            size_t other_col = distance(keys.begin(), ki);
-            cols[column].passthrough = 0;
-            if(cols.end() == cols.find(other_col)) cols[other_col].passthrough = 1;
-            new_col_info_t& nci = new_cols[column];
-            nci.other_col = other_col;
-            nci.binary_op = &(*ii).binary_op;
-            break;
+          if(ki == keys.end()) {
+            stringstream msg; msg << "binary_col_modifier could not find " << buf << " which is paired with " << keys[column];
+            throw runtime_error(msg.str());
           }
+          size_t other_col = distance(keys.begin(), ki);
+          cols[column].passthrough = 0;
+          if(cols.end() == cols.find(other_col)) cols[other_col].passthrough = 1;
+          new_col_info_t& nci = new_cols[column];
+          nci.other_col = other_col;
+          nci.binary_op = &(*ii).binary_op;
+          break;
         }
       }
     }

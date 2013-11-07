@@ -104,11 +104,11 @@ int main(int argc, char * argv[])
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    unary_col_modifier<double (*)(double)> um(w);
-    um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
+    //unary_col_modifier<double (*)(double)> um(w);
+    //um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
 
-    unary_col_adder<double (*)(double)> ua(w);
-    ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
+    //unary_col_adder<double (*)(double)> ua(w);
+    //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
     binary_col_modifier<double (*)(double, double)> bm(w);
     bm.add("(BIN_OM_INIT_GOOD_MBLKS_PLANE)0", "\\11", sum);
@@ -126,17 +126,17 @@ int main(int argc, char * argv[])
     //a.add_exception("^MAP_REV$");
     //a.add_data(".*");
 
-    substitutor sb(w);
-    sb.add_exception("^LOT$");
-    sb.add_exception("^WAFER$");
-    sb.add_exception("^ROW$");
-    sb.add_exception("^COL$");
-    sb.add_exception("^WAFSIZE$");
-    sb.add_exception("^Process_id$");
-    sb.add_exception("^Fail_bin$");
-    sb.add_exception("^Error_bin$");
-    sb.add_exception("^Group$");
-    sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
+    //substitutor sb(w);
+    //sb.add_exception("^LOT$");
+    //sb.add_exception("^WAFER$");
+    //sb.add_exception("^ROW$");
+    //sb.add_exception("^COL$");
+    //sb.add_exception("^WAFSIZE$");
+    //sb.add_exception("^Process_id$");
+    //sb.add_exception("^Fail_bin$");
+    //sb.add_exception("^Error_bin$");
+    //sb.add_exception("^Group$");
+    //sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -193,7 +193,7 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(w);
 
-    read_csv("raw.csv", sb);
+    read_csv("raw.csv", bm);
 
     //row_joiner rj(w);
 
