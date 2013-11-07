@@ -660,10 +660,10 @@ void read_csv(const char* filename, pass& out);
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// unary_modifier
+// unary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class unary_modifier : public pass {
+template<typename UnaryOperation> class unary_col_modifier : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -680,12 +680,12 @@ template<typename UnaryOperation> class unary_modifier : public pass {
   std::vector<UnaryOperation*> column_insts;
 
 public:
-  unary_modifier();
-  unary_modifier(pass& out);
-  unary_modifier& init();
-  unary_modifier& init(pass& out);
-  unary_modifier& set_out(pass& out);
-  unary_modifier& add(const char* regex, const UnaryOperation& unary_op);
+  unary_col_modifier();
+  unary_col_modifier(pass& out);
+  unary_col_modifier& init();
+  unary_col_modifier& init(pass& out);
+  unary_col_modifier& set_out(pass& out);
+  unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
   void process_line();
@@ -694,10 +694,10 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// unary_adder
+// unary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class unary_adder : public pass {
+template<typename UnaryOperation> class unary_col_adder : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -726,12 +726,12 @@ template<typename UnaryOperation> class unary_adder : public pass {
   typename std::vector<col_t>::iterator ci;
 
 public:
-  unary_adder();
-  unary_adder(pass& out);
-  unary_adder& init();
-  unary_adder& init(pass& out);
-  unary_adder& set_out(pass& out);
-  unary_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
+  unary_col_adder();
+  unary_col_adder(pass& out);
+  unary_col_adder& init();
+  unary_col_adder& init(pass& out);
+  unary_col_adder& set_out(pass& out);
+  unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
   void process_line();
@@ -740,10 +740,10 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// binary_modifier
+// binary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename BinaryOperation> class binary_modifier : public pass {
+template<typename BinaryOperation> class binary_col_modifier : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -769,12 +769,12 @@ template<typename BinaryOperation> class binary_modifier : public pass {
   std::vector<new_col_t> new_columns;
 
 public:
-  binary_modifier();
-  binary_modifier(pass& out);
-  binary_modifier& init();
-  binary_modifier& init(pass& out);
-  binary_modifier& set_out(pass& out);
-  binary_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
+  binary_col_modifier();
+  binary_col_modifier(pass& out);
+  binary_col_modifier& init();
+  binary_col_modifier& init(pass& out);
+  binary_col_modifier& set_out(pass& out);
+  binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
 
   void process_token(const char* token);
   void process_line();

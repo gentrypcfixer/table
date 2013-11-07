@@ -915,24 +915,7 @@ void substitutor::process_token(const char* token)
       else {
         char* next = buf;
         if(!rc) rc = 10;
-        for(const char* tp = s->to.c_str(); 1; ++tp) {
-          int br = 10;
-          if(*tp == '\\' && isdigit(*(tp + 1))) br = *(tp + 1) - '0';
-          if(br < rc) {
-            const char* cs = token + ovector[br * 2];
-            const char* ce = token + ovector[br * 2 + 1];
-            while(cs < ce) {
-              if(next >= end) resize_buffer(buf, next, end);
-              *next++ = *cs++;
-            }
-            ++tp;
-          }
-          else {
-            if(next >= end) resize_buffer(buf, next, end);
-            *next++ = *tp;
-            if(!*tp) break;
-          }
-        }
+        generate_substitution(token, s->to.c_str(), ovector, rc, buf, next, end);
         out->process_token(buf);
       }
     }
@@ -1156,23 +1139,7 @@ void combiner::process_line()
         else {
           char* next = buf;
           if(!rc) rc = 10;
-          for(const char* rp = (*i).second.c_str(); 1; ++rp) {
-            int br = 0;
-            if(*rp == '\\' && isdigit(*(rp + 1)) && rc > (br = *(rp + 1) - '0')) {
-              const char* cs = tokens[j].c_str() + ovector[br * 2];
-              const char* ce = tokens[j].c_str() + ovector[br * 2 + 1];
-              while(cs < ce) {
-                if(next >= end) resize_buffer(buf, next, end);
-                *next++ = *cs++;
-              }
-              ++rp;
-            }
-            else {
-              if(next >= end) resize_buffer(buf, next, end);
-              *next++ = *rp;
-              if(!*rp) break;
-            }
-          }
+          generate_substitution(tokens[j].c_str(), (*i).second.c_str(), ovector, rc, buf, next, end);
 
           size_t k = 0;
           for(; k < tokens.size(); ++k) {
