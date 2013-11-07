@@ -2,6 +2,9 @@
 #define numeric_imp_h_
 
 #include <stdexcept>
+#include <limits>
+#include <math.h>
+#include <stdio.h>
 
 namespace table {
 

@@ -1,7 +1,3 @@
-#include <stdexcept>
-#include <limits>
-#include <math.h>
-#include <stdio.h>
 #include "table.h"
 
 using namespace std;
