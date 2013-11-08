@@ -805,7 +805,10 @@ template<typename BinaryOperation> class binary_col_modifier : public pass {
   std::vector<inst_t> insts;
   bool first_row;
   size_t column;
-  std::vector<std::string> keys;
+  std::vector<char*> key_storage;
+  char* key_storage_next;
+  char* key_storage_end;
+  std::vector<char*> keys;
   std::vector<col_t> columns;
   typename std::vector<col_t>::iterator ci;
   std::vector<new_col_t> new_columns;
@@ -813,6 +816,7 @@ template<typename BinaryOperation> class binary_col_modifier : public pass {
 public:
   binary_col_modifier();
   binary_col_modifier(pass& out);
+  ~binary_col_modifier();
   binary_col_modifier& init();
   binary_col_modifier& init(pass& out);
   binary_col_modifier& set_out(pass& out);
@@ -944,12 +948,13 @@ class base_converter : public pass {
     ~regex_base_conv_t() { pcre_free(regex); }
   };
 
+  struct conv_t { int from; int to; };
+
   pass* out;
   std::vector<regex_base_conv_t> regex_base_conv;
   bool first_row;
   int column;
-  std::vector<int> from_base;
-  std::vector<int> to_base;
+  std::vector<conv_t> conv;
 
 public:
   base_converter();

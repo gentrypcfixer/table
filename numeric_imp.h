@@ -66,7 +66,7 @@ template<typename UnaryOperation> void unary_col_modifier<UnaryOperation>::proce
       if(isnan(val)) out->process_token("");
       else {
         char buf[32];
-        sprintf(buf, "%f", val);
+        sprintf(buf, "%.6g", val);
         out->process_token(buf);
       }
     }
@@ -172,7 +172,7 @@ template<typename UnaryOperation> void unary_col_adder<UnaryOperation>::process_
       if(isnan(val)) out->process_token("");
       else {
         char buf[32];
-        sprintf(buf, "%f", val);
+        sprintf(buf, "%.6g", val);
         out->process_token(buf);
       }
     }
@@ -196,12 +196,21 @@ template<typename UnaryOperation> void unary_col_adder<UnaryOperation>::process_
 template<typename BinaryOperation> binary_col_modifier<BinaryOperation>::binary_col_modifier() { init(); }
 template<typename BinaryOperation> binary_col_modifier<BinaryOperation>::binary_col_modifier(pass& out) { init(out); }
 
+template<typename BinaryOperation> binary_col_modifier<BinaryOperation>::~binary_col_modifier()
+{
+  for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+}
+
 template<typename BinaryOperation> binary_col_modifier<BinaryOperation>& binary_col_modifier<BinaryOperation>::init()
 {
   out = 0;
   insts.clear();
   first_row = 1;
   column = 0;
+  for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+  key_storage.clear();
+  key_storage_next = 0;
+  key_storage_end = 0;
   keys.clear();
   columns.clear();
   new_columns.clear();
@@ -226,7 +235,17 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
 {
   if(first_row) {
     if(!out) throw runtime_error("binary_col_modifier has no out");
-    keys.push_back(token);
+    size_t len = strlen(token);
+    if(len + 1 > size_t(key_storage_end - key_storage_next)) {
+      size_t cap = 256 * 1024;
+      if(cap < len + 1) cap = len + 1;
+      key_storage.push_back(new char[cap]);
+      key_storage_next = key_storage.back();
+      key_storage_end = key_storage.back() + cap;
+    }
+    keys.push_back(key_storage_next);
+    memcpy(key_storage_next, token, len + 1);
+    key_storage_next += len + 1;
   }
   else {
     if(ci == columns.end() || (*ci).col != column) out->process_token(token);
@@ -254,19 +273,20 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
     map<size_t, new_col_info_t> new_cols;
 
     for(column = 0; column < keys.size(); ++column) {
+      const size_t len = strlen(keys[column]);
       for(typename vector<inst_t>::iterator ii = insts.begin(); ii != insts.end(); ++ii) {
-        int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column].c_str(), keys[column].size(), 0, 0, ovector, 30);
+        int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column], len, 0, 0, ovector, 30);
         if(rc < 0){ if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("binary_col_modifier match error"); }
         else {
           char* next = buf;
           if(!rc) rc = 10;
-          generate_substitution(keys[column].c_str(), (*ii).other_key.c_str(), ovector, rc, buf, next, end);
-          vector<string>::iterator ki = find(keys.begin(), keys.end(), buf);
-          if(ki == keys.end()) {
+          generate_substitution(keys[column], (*ii).other_key.c_str(), ovector, rc, buf, next, end);
+          size_t other_col = 0;
+          while(other_col < keys.size() && strcmp(keys[other_col], buf)) ++other_col;
+          if(other_col >= keys.size()) {
             stringstream msg; msg << "binary_col_modifier could not find " << buf << " which is paired with " << keys[column];
             throw runtime_error(msg.str());
           }
-          size_t other_col = distance(keys.begin(), ki);
           cols[column].passthrough = 0;
           if(cols.end() == cols.find(other_col)) cols[other_col].passthrough = 1;
           new_col_info_t& nci = new_cols[column];
@@ -280,7 +300,7 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
     for(column = 0; column < keys.size(); ++column) {
       typename map<size_t, col_info_t>::iterator i = cols.find(column);
       if(i == cols.end() || (*i).second.passthrough)
-        out->process_token(keys[column].c_str());
+        out->process_token(keys[column]);
     }
 
     for(typename map<size_t, col_info_t>::iterator i = cols.begin(); i != cols.end(); ++i) {
@@ -297,12 +317,16 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
       c.other_col_index = cols[(*i).second.other_col].index;
       c.binary_op = (*i).second.binary_op;
       new_columns.push_back(c);
-      out->process_token(keys[(*i).first].c_str());
+      out->process_token(keys[(*i).first]);
     }
 
     delete[] buf;
     first_row = 0;
     keys.clear();
+    for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+    key_storage.clear();
+    key_storage_next = 0;
+    key_storage_end = 0;
   }
   else {
     for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
@@ -310,7 +334,7 @@ template<typename BinaryOperation> void binary_col_modifier<BinaryOperation>::pr
       if(isnan(val)) out->process_token("");
       else {
         char buf[32];
-        sprintf(buf, "%f", val);
+        sprintf(buf, "%.6g", val);
         out->process_token(buf);
       }
     }

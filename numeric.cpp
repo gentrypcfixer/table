@@ -328,12 +328,12 @@ void summarizer::process_stream()
 
       if((*cfi) & SUM_MISSING) { sprintf(group_tokens, "%d", (*d).missing); out->process_token(group_tokens); }
       if((*cfi) & SUM_COUNT) { sprintf(group_tokens, "%d", (*d).count); out->process_token(group_tokens); }
-      if((*cfi) & SUM_SUM) { sprintf(group_tokens, "%f", (*d).sum); out->process_token(group_tokens); }
-      if((*cfi) & SUM_MIN) { sprintf(group_tokens, "%f", (*d).min); out->process_token(group_tokens); }
-      if((*cfi) & SUM_MAX) { sprintf(group_tokens, "%f", (*d).max); out->process_token(group_tokens); }
+      if((*cfi) & SUM_SUM) { sprintf(group_tokens, "%.6g", (*d).sum); out->process_token(group_tokens); }
+      if((*cfi) & SUM_MIN) { sprintf(group_tokens, "%.6g", (*d).min); out->process_token(group_tokens); }
+      if((*cfi) & SUM_MAX) { sprintf(group_tokens, "%.6g", (*d).max); out->process_token(group_tokens); }
       if((*cfi) & SUM_AVG) {
         if(!(*d).count) { out->process_token(""); }
-        else { sprintf(group_tokens, "%f", ((*d).sum / (*d).count)); out->process_token(group_tokens); }
+        else { sprintf(group_tokens, "%.6g", ((*d).sum / (*d).count)); out->process_token(group_tokens); }
       }
       if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
         double v = 0.0;
@@ -341,8 +341,8 @@ void summarizer::process_stream()
           v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
           v /= (*d).count - 1;
         }
-        if((*cfi) & SUM_VARIANCE) { sprintf(group_tokens, "%f", v); out->process_token(group_tokens); }
-        if((*cfi) & SUM_STD_DEV) { sprintf(group_tokens, "%f", sqrt(v)); out->process_token(group_tokens); }
+        if((*cfi) & SUM_VARIANCE) { sprintf(group_tokens, "%.6g", v); out->process_token(group_tokens); }
+        if((*cfi) & SUM_STD_DEV) { sprintf(group_tokens, "%.6g", sqrt(v)); out->process_token(group_tokens); }
       }
       ++d;
     }
@@ -416,7 +416,7 @@ void differ::process_line()
     if(blank) out->process_token("");
     else {
       char buf[32];
-      sprintf(buf, "%f", comp_value - base_value);
+      sprintf(buf, "%.6g", comp_value - base_value);
       out->process_token(buf);
     }
   }
@@ -446,8 +446,7 @@ base_converter& base_converter::init()
   regex_base_conv.clear();
   first_row = 1;
   column = 0;
-  from_base.clear();
-  to_base.clear();
+  conv.clear();
   return *this;
 }
 
@@ -474,29 +473,29 @@ void base_converter::process_token(const char* token)
   if(first_row) {
     if(!out) throw runtime_error("differ has no out");
     size_t len = strlen(token);
-    int from = -1; int to = 0;
+    conv_t c; c.from = -1; c.to = 0;
     for(vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
       int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { from = (*i).from; to = (*i).to; break; }
+      if(rc >= 0) { c.from = (*i).from; c.to = (*i).to; break; }
       else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("base_converter match error");
     }
-    from_base.push_back(from); to_base.push_back(to);
+    conv.push_back(c);
     out->process_token(token);
   }
-  else if(from_base[column] < 0) out->process_token(token);
+  else if(conv[column].from < 0) out->process_token(token);
   else {
     char* next = 0;
     long int ivalue = 0;
     double dvalue = 0.0;
-    if(from_base[column] == 10) { dvalue = strtod(token, &next); ivalue = (long int)dvalue; }
-    else { ivalue = strtol(token, &next, from_base[column]); dvalue = ivalue; }
+    if(conv[column].from == 10) { dvalue = strtod(token, &next); ivalue = (long int)dvalue; }
+    else { ivalue = strtol(token, &next, conv[column].from); dvalue = ivalue; }
 
     if(next == token) out->process_token(token);
     else {
       char buf[256];
-      if(to_base[column] == 10) { sprintf(buf, "%f", dvalue); out->process_token(buf); }
-      else if(to_base[column] == 8) { sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
-      else if(to_base[column] == 16) { sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
+      if(conv[column].to == 10) { sprintf(buf, "%.6g", dvalue); out->process_token(buf); }
+      else if(conv[column].to == 8) { sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
+      else if(conv[column].to == 16) { sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
       else out->process_token(token);
     }
   }
@@ -723,10 +722,10 @@ void variance_analyzer::process_stream()
       sum_of_sum_of_squares += dp->sum_of_squares;
       sum_of_sum_squared_over_count += (dp->sum * dp->sum) / dp->count;
 
-      if(dp->count) sprintf(group_tokens, "%f", dp->sum / dp->count);
+      if(dp->count) sprintf(group_tokens, "%.6g", dp->sum / dp->count);
       else group_tokens[0] = '\0';
       out->process_token(group_tokens);
-      if(dp->count > 1) sprintf(group_tokens, "%f", sqrt((dp->sum_of_squares - ((dp->sum * dp->sum) / dp->count)) / (dp->count - 1)));
+      if(dp->count > 1) sprintf(group_tokens, "%.6g", sqrt((dp->sum_of_squares - ((dp->sum * dp->sum) / dp->count)) / (dp->count - 1)));
       else group_tokens[0] = '\0';
       out->process_token(group_tokens);
     }
@@ -746,10 +745,10 @@ void variance_analyzer::process_stream()
       if(f != numeric_limits<double>::infinity())
         p = ibeta(sstr_df / 2, sse_df / 2, (sstr_df * f) / (sstr_df * f + sse_df));
 
-      sprintf(group_tokens, "%f", total_sum / total_count); out->process_token(group_tokens);
-      sprintf(group_tokens, "%f", sqrt(sst / (total_count - 1))); out->process_token(group_tokens);
-      sprintf(group_tokens, "%f", f); out->process_token(group_tokens);
-      sprintf(group_tokens, "%f", p); out->process_token(group_tokens);
+      sprintf(group_tokens, "%.6g", total_sum / total_count); out->process_token(group_tokens);
+      sprintf(group_tokens, "%.6g", sqrt(sst / (total_count - 1))); out->process_token(group_tokens);
+      sprintf(group_tokens, "%.6g", f); out->process_token(group_tokens);
+      sprintf(group_tokens, "%.6g", p); out->process_token(group_tokens);
     }
     else {
       group_tokens[0] = '\0';

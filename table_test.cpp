@@ -87,6 +87,12 @@ double sum(double a, double b)
   return a + b;
 }
 
+double calc(double a, double b)
+{
+  if(isnan(a) || isnan(b)) return numeric_limits<double>::quiet_NaN();
+  else return a * 13.0 + b;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -110,8 +116,8 @@ int main(int argc, char * argv[])
     //unary_col_adder<double (*)(double)> ua(w);
     //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
-    //binary_col_modifier<double (*)(double, double)> bm(w);
-    //bm.add("(BIN_OM_INIT_GOOD_MBLKS_PLANE)0", "\\11", sum);
+    binary_col_modifier<double (*)(double, double)> bm(w);
+    bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
@@ -138,17 +144,17 @@ int main(int argc, char * argv[])
     //sb.add_exception("^Group$");
     //sb.add(".*", "^(\\d)(\\d+)$", "\\1.\\2");
 
-    col_adder ca(w);
-    ca.add_exception("^LOT$");
-    ca.add_exception("^WAFER$");
-    ca.add_exception("^ROW$");
-    ca.add_exception("^COL$");
-    ca.add_exception("^WAFSIZE$");
-    ca.add_exception("^Process_id$");
-    ca.add_exception("^Fail_bin$");
-    ca.add_exception("^Error_bin$");
-    ca.add_exception("^Group$");
-    ca.add(".*", "\\0_NEW", "^(\\d)(\\d+)$", "\\1.\\2");
+    //col_adder ca(w);
+    //ca.add_exception("^LOT$");
+    //ca.add_exception("^WAFER$");
+    //ca.add_exception("^ROW$");
+    //ca.add_exception("^COL$");
+    //ca.add_exception("^WAFSIZE$");
+    //ca.add_exception("^Process_id$");
+    //ca.add_exception("^Fail_bin$");
+    //ca.add_exception("^Error_bin$");
+    //ca.add_exception("^Group$");
+    //ca.add(".*", "\\0_NEW", "^(\\d)(\\d+)$", "\\1.\\2");
 
     //summarizer su(w);
     //su.add_group("^LOT$");
@@ -201,11 +207,11 @@ int main(int argc, char * argv[])
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
 
-    //base_converter bc(w, "WLSV_OFST_VPGM_WLGRP1_MV", 10, 16);
+    base_converter bc(bm, "NPT\\d+", 16, 10);
 
     //col_pruner cp(w);
 
-    read_csv("raw.csv", ca);
+    read_csv("out.csv", bc);
 
     //row_joiner rj(w);
 
