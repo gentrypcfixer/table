@@ -9,7 +9,7 @@ CPPFLAGS += -Wall
 #CPPFLAGS += -g
 CPPFLAGS += -O2
 
-LDFLAGS_SHARED = -lpcre
+LDFLAGS_SHARED = -lpcre -lpthread
 LDFLAGS_STATIC = -static -L$(PCRE_DIR)/.libs -lpcre -lpthread
 LDFLAGS = $(LDFLAGS_$(LIB_TYPE))
 

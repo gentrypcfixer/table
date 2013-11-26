@@ -1,5 +1,5 @@
 get rid of cstring_queue
+Reduce the mutex overhead in threader by only locking every so many bytes instead of every token
 sorter
-threader
 check allocations
 improve differ

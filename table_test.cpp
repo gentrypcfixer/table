@@ -207,11 +207,13 @@ int main(int argc, char * argv[])
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
 
-    base_converter bc(bm, "NPT\\d+", 16, 10);
+    threader th(bm);
+
+    base_converter bc(th, "NPT\\d+", 16, 10);
 
     //col_pruner cp(w);
 
-    read_csv("out.csv", bc);
+    read_csv("raw.csv", bc);
 
     //row_joiner rj(w);
 

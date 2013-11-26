@@ -9,6 +9,7 @@
 #include <pcre.h>
 #include <stdint.h>
 #include <string.h>
+#include <pthread.h>
 
 
 #if(PCRE_MAJOR < 8 || (PCRE_MAJOR == 8 && PCRE_MINOR < 20))
@@ -228,6 +229,39 @@ public:
   virtual void process_token(const char* token) = 0;
   virtual void process_line() = 0;
   virtual void process_stream() = 0;
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// threader
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class threader : public pass
+{
+  pass* out;
+  char* buf;
+  char* end;
+  char* last;
+  char* next;
+  bool created;
+  pthread_mutex_t mutex;
+  pthread_cond_t prod_cond;
+  pthread_cond_t cons_cond;
+  pthread_t thread;
+
+public:
+  friend void* threader_main(void*);
+
+  threader();
+  threader(pass& out);
+  ~threader();
+  threader& init();
+  threader& init(pass& out);
+  threader& set_out(pass& out);
+
+  void process_token(const char* token);
+  void process_line();
+  void process_stream();
 };
 
 
