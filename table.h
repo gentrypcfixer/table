@@ -238,16 +238,26 @@ public:
 
 class threader : public pass
 {
+  struct chunk_info_t {
+    char* start;
+    char* end;
+
+    chunk_info_t() : start(0) {}
+  };
+
   pass* out;
-  char* buf;
-  char* end;
-  char* last;
-  char* next;
-  bool created;
+  chunk_info_t chunks[8];
+  size_t write_chunk;
+  char* write_chunk_next;
+  size_t read_chunk;
+  bool thread_created;
   pthread_mutex_t mutex;
   pthread_cond_t prod_cond;
   pthread_cond_t cons_cond;
   pthread_t thread;
+
+  void resize_write_chunk(size_t min_size);
+  void inc_write_chunk();
 
 public:
   friend void* threader_main(void*);

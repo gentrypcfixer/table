@@ -137,23 +137,26 @@ void* threader_main(void* data)
 {
   threader* t = static_cast<threader*>(data);
 
-  size_t inc = 0;
-  while(1) {
+  bool done = 0;
+  bool inc = 0;
+  while(!done) {
     pthread_mutex_lock(&t->mutex);
     if(inc) {
-      t->last += inc;
-      inc = 0;
+      t->read_chunk = (t->read_chunk + 1) % 8;
       pthread_cond_signal(&t->prod_cond);
     }
-    while(t->next == t->last) {
+    else inc = 1;
+    while(t->read_chunk == t->write_chunk) {
       pthread_cond_wait(&t->cons_cond, &t->mutex);
     }
-    if(*t->last == '\x03') t->last = t->buf;
     pthread_mutex_unlock(&t->mutex);
 
-    if(*t->last == 2) break;
-    else if(*t->last == 1) { inc = 1; t->out->process_line(); }
-    else { inc = strlen(t->last) + 1; t->out->process_token(t->last); }
+    for(char* cur = t->chunks[t->read_chunk].start; 1; ++cur) {
+      if(*cur == '\x01') t->out->process_line();
+      else if(*cur == '\x02') { done = 1; break; }
+      else if(*cur == '\x03') break;
+      else { size_t len = strlen(cur); t->out->process_token(cur); cur += len; }
+    }
   }
 
   t->out->process_stream();
@@ -161,23 +164,53 @@ void* threader_main(void* data)
   return 0;
 }
 
-threader::threader() : buf(0), created(0) { init(); }
-threader::threader(pass& out) : buf(0), created(0) { init(out); }
+void threader::resize_write_chunk(size_t min_size)
+{
+  delete[] chunks[write_chunk].start;
+  chunks[write_chunk].start = new char[min_size * 2];
+  write_chunk_next = chunks[write_chunk].start;
+  chunks[write_chunk].end = chunks[write_chunk].start + min_size * 2;
+}
+
+void threader::inc_write_chunk()
+{
+    *write_chunk_next++ = '\x03';
+
+    pthread_mutex_lock(&mutex);
+    while((write_chunk + 1) % 8 == read_chunk)
+      pthread_cond_wait(&prod_cond, &mutex);
+    write_chunk = (write_chunk + 1) % 8;
+    pthread_cond_signal(&cons_cond);
+    pthread_mutex_unlock(&mutex);
+
+    write_chunk_next = chunks[write_chunk].start;
+}
+
+threader::threader() : thread_created(0) { init(); }
+threader::threader(pass& out) : thread_created(0) { init(out); }
 
 threader::~threader()
 {
-  if(created) {
+  if(thread_created) {
     pthread_cancel(thread);
     pthread_cond_destroy(&cons_cond);
     pthread_cond_destroy(&prod_cond);
     pthread_mutex_destroy(&mutex);
-    created = 0;
+    thread_created = 0;
   }
-  delete[] buf;
+  for(int c = 0; c < 8; ++c) delete[] chunks[c].start;
 }
 
 threader& threader::init() {
   out = 0;
+  for(int c = 0; c < 8; ++c) {
+    delete[] chunks[c].start;
+    chunks[c].start = new char[8 * 1024];
+    chunks[c].end = chunks[c].start + 8 * 1024;
+  }
+  write_chunk = 0;
+  write_chunk_next = chunks[0].start;
+  read_chunk = 0;
   return *this;
 }
 
@@ -186,110 +219,52 @@ threader& threader::set_out(pass& out) { this->out = &out; return *this; }
 
 void threader::process_token(const char* token)
 {
-  if(!created) {
+  if(!thread_created) {
     if(!out) throw runtime_error("threader has no out");
-    if(!buf) {
-      buf = new char[256 * 1024];
-      end = buf + 256 * 1024;
-      last = buf;
-      next = buf;
-    }
     pthread_mutex_init(&mutex, 0);
     pthread_cond_init(&prod_cond, 0);
     pthread_cond_init(&cons_cond, 0);
     pthread_create(&thread, 0, threader_main, this);
-    created = 1;
+    thread_created = 1;
   }
 
   size_t len = strlen(token);
-
-  pthread_mutex_lock(&mutex);
-
-  bool term = 0;
-  while(1) {
-    size_t rem;
-    if(last > next) rem = last - next;
-    else {
-      rem = end - next;
-      if(rem < len + 2) term = 1, rem = last - buf;
-    }
-
-    if(rem > len + 1) break;
-    else { pthread_cond_wait(&prod_cond, &mutex); }
+  if(size_t(chunks[write_chunk].end - write_chunk_next) < len + 2) {
+    if(write_chunk_next == chunks[write_chunk].start) resize_write_chunk(len + 2);
+    else inc_write_chunk();
   }
-
-  if(term) { *next = '\x03'; next = buf; }
-  memcpy(next, token, len + 1);
-  next += len + 1;
-
-  pthread_cond_signal(&cons_cond);
-  pthread_mutex_unlock(&mutex);
+  memcpy(write_chunk_next, token, len + 1);
+  write_chunk_next += len + 1;
 }
 
 void threader::process_line()
 {
-  if(!created) {
+  if(!thread_created) {
     if(!out) throw runtime_error("threader has no out");
     out->process_line();
     return;
   }
 
-  pthread_mutex_lock(&mutex);
-
-  bool term = 0;
-  while(1) {
-    size_t rem;
-    if(last > next) rem = last - next;
-    else {
-      rem = end - next;
-      if(rem < 2) term = 1, rem = last - buf;
-    }
-
-    if(rem > 1) break;
-    else { pthread_cond_wait(&prod_cond, &mutex); }
-  }
-
-  if(term) { *next = '\x03'; next = buf; }
-  *next++ = '\x01';
-
-  pthread_cond_signal(&cons_cond);
-  pthread_mutex_unlock(&mutex);
+  if(chunks[write_chunk].end - write_chunk_next < 2) inc_write_chunk();
+  *write_chunk_next++ = '\x01';
 }
 
 void threader::process_stream()
 {
-  if(!created) {
+  if(!thread_created) {
     if(!out) throw runtime_error("threader has no out");
     out->process_stream();
     return;
   }
 
-  pthread_mutex_lock(&mutex);
-
-  bool term = 0;
-  while(1) {
-    size_t rem;
-    if(last > next) rem = last - next;
-    else {
-      rem = end - next;
-      if(rem < 2) term = 1, rem = last - buf;
-    }
-
-    if(rem > 1) break;
-    else { pthread_cond_wait(&prod_cond, &mutex); }
-  }
-
-  if(term) { *next = '\x03'; next = buf; }
-  *next++ = '\x02';
-
-  pthread_cond_signal(&cons_cond);
-  pthread_mutex_unlock(&mutex);
+  *write_chunk_next++ = '\x02';
+  inc_write_chunk();
 
   pthread_join(thread, 0);
   pthread_cond_destroy(&cons_cond);
   pthread_cond_destroy(&prod_cond);
   pthread_mutex_destroy(&mutex);
-  created = 0;
+  thread_created = 0;
 }
 
 
