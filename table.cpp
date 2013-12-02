@@ -128,6 +128,16 @@ void cstring_queue::clear()
 
 pass::~pass() {}
 
+void pass::process_token(double token)
+{
+  if(isnan(token)) process_token("");
+  else {
+    char buf[32];
+    sprintf(buf, "%.6g", token);
+    process_token(buf);
+  }
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // threader

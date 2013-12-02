@@ -110,13 +110,13 @@ int main(int argc, char * argv[])
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    //unary_col_modifier<double (*)(double)> um(w);
-    //um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
+    unary_col_modifier um(w);
+    um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
 
-    //unary_col_adder<double (*)(double)> ua(w);
-    //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
+    unary_col_adder ua(w);
+    ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
-    binary_col_modifier<double (*)(double, double)> bm(w);
+    binary_col_modifier bm(w);
     bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
 
     //variance_analyzer a(w);
@@ -209,7 +209,7 @@ int main(int argc, char * argv[])
 
     threader th(bm);
 
-    base_converter bc(th, "NPT\\d+", 16, 10);
+    base_converter bc(bm, "NPT\\d+", 16, 10);
 
     //col_pruner cp(w);
 

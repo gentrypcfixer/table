@@ -1,4 +1,8 @@
+process_token(double)
+  * all numeric passes
+  * threader
+  * all other passes
 get rid of cstring_queue
 sorter
 check allocations
-improve differ
+improve differ (binary col adder)

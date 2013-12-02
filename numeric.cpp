@@ -326,23 +326,30 @@ void summarizer::process_stream()
     for(cfi = column_flags.begin(); cfi != column_flags.end(); ++cfi) {
       if(!((*cfi) & 0xFFFFFFFE)) continue;
 
-      if((*cfi) & SUM_MISSING) { sprintf(group_tokens, "%d", (*d).missing); out->process_token(group_tokens); }
-      if((*cfi) & SUM_COUNT) { sprintf(group_tokens, "%d", (*d).count); out->process_token(group_tokens); }
-      if((*cfi) & SUM_SUM) { sprintf(group_tokens, "%.6g", (*d).sum); out->process_token(group_tokens); }
-      if((*cfi) & SUM_MIN) { sprintf(group_tokens, "%.6g", (*d).min); out->process_token(group_tokens); }
-      if((*cfi) & SUM_MAX) { sprintf(group_tokens, "%.6g", (*d).max); out->process_token(group_tokens); }
+      if((*cfi) & SUM_MISSING) { out->process_token((*d).missing); }
+      if((*cfi) & SUM_COUNT) { out->process_token((*d).count); }
+      if((*cfi) & SUM_SUM) { out->process_token((*d).sum); }
+      if((*cfi) & SUM_MIN) { out->process_token((*d).min); }
+      if((*cfi) & SUM_MAX) { out->process_token((*d).max); }
       if((*cfi) & SUM_AVG) {
-        if(!(*d).count) { out->process_token(""); }
-        else { sprintf(group_tokens, "%.6g", ((*d).sum / (*d).count)); out->process_token(group_tokens); }
+        if(!(*d).count) { out->process_token(numeric_limits<double>::quiet_NaN()); }
+        else { out->process_token((*d).sum / (*d).count); }
       }
       if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
-        double v = 0.0;
         if((*d).count > 1) {
-          v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
+          double v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
           v /= (*d).count - 1;
+          if((*cfi) & SUM_VARIANCE) { out->process_token(v); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(sqrt(v)); }
         }
-        if((*cfi) & SUM_VARIANCE) { sprintf(group_tokens, "%.6g", v); out->process_token(group_tokens); }
-        if((*cfi) & SUM_STD_DEV) { sprintf(group_tokens, "%.6g", sqrt(v)); out->process_token(group_tokens); }
+        else if((*d).count == 1) {
+          if((*cfi) & SUM_VARIANCE) { out->process_token(0.0); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(0.0); }
+        }
+        else {
+          if((*cfi) & SUM_VARIANCE) { out->process_token(numeric_limits<double>::quiet_NaN()); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(numeric_limits<double>::quiet_NaN()); }
+        }
       }
       ++d;
     }
@@ -493,7 +500,7 @@ void base_converter::process_token(const char* token)
     if(next == token) out->process_token(token);
     else {
       char buf[256];
-      if(conv[column].to == 10) { sprintf(buf, "%.6g", dvalue); out->process_token(buf); }
+      if(conv[column].to == 10) { out->process_token(dvalue); }
       else if(conv[column].to == 8) { sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
       else if(conv[column].to == 16) { sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
       else out->process_token(token);
@@ -722,12 +729,10 @@ void variance_analyzer::process_stream()
       sum_of_sum_of_squares += dp->sum_of_squares;
       sum_of_sum_squared_over_count += (dp->sum * dp->sum) / dp->count;
 
-      if(dp->count) sprintf(group_tokens, "%.6g", dp->sum / dp->count);
-      else group_tokens[0] = '\0';
-      out->process_token(group_tokens);
-      if(dp->count > 1) sprintf(group_tokens, "%.6g", sqrt((dp->sum_of_squares - ((dp->sum * dp->sum) / dp->count)) / (dp->count - 1)));
-      else group_tokens[0] = '\0';
-      out->process_token(group_tokens);
+      if(dp->count) out->process_token(dp->sum / dp->count);
+      else out->process_token(numeric_limits<double>::quiet_NaN());
+      if(dp->count > 1) out->process_token(sqrt((dp->sum_of_squares - ((dp->sum * dp->sum) / dp->count)) / (dp->count - 1)));
+      else out->process_token(numeric_limits<double>::quiet_NaN());
     }
 
     if(num_groups > 1) {
@@ -745,17 +750,16 @@ void variance_analyzer::process_stream()
       if(f != numeric_limits<double>::infinity())
         p = ibeta(sstr_df / 2, sse_df / 2, (sstr_df * f) / (sstr_df * f + sse_df));
 
-      sprintf(group_tokens, "%.6g", total_sum / total_count); out->process_token(group_tokens);
-      sprintf(group_tokens, "%.6g", sqrt(sst / (total_count - 1))); out->process_token(group_tokens);
-      sprintf(group_tokens, "%.6g", f); out->process_token(group_tokens);
-      sprintf(group_tokens, "%.6g", p); out->process_token(group_tokens);
+      out->process_token(total_sum / total_count);
+      out->process_token(sqrt(sst / (total_count - 1)));
+      out->process_token(f);
+      out->process_token(p);
     }
     else {
-      group_tokens[0] = '\0';
-      out->process_token(group_tokens);
-      out->process_token(group_tokens);
-      out->process_token(group_tokens);
-      out->process_token(group_tokens);
+      out->process_token(numeric_limits<double>::quiet_NaN());
+      out->process_token(numeric_limits<double>::quiet_NaN());
+      out->process_token(numeric_limits<double>::quiet_NaN());
+      out->process_token(numeric_limits<double>::quiet_NaN());
     }
 
     out->process_line();

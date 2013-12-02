@@ -227,6 +227,7 @@ public:
   virtual ~pass();
 
   virtual void process_token(const char* token) = 0;
+  virtual void process_token(double token);
   virtual void process_line() = 0;
   virtual void process_stream() = 0;
 };
@@ -749,7 +750,7 @@ void read_csv(const char* filename, pass& out);
 // unary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class unary_col_modifier : public pass {
+template<typename UnaryOperation> class basic_unary_col_modifier : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -766,24 +767,26 @@ template<typename UnaryOperation> class unary_col_modifier : public pass {
   std::vector<UnaryOperation*> column_insts;
 
 public:
-  unary_col_modifier();
-  unary_col_modifier(pass& out);
-  unary_col_modifier& init();
-  unary_col_modifier& init(pass& out);
-  unary_col_modifier& set_out(pass& out);
-  unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
+  basic_unary_col_modifier();
+  basic_unary_col_modifier(pass& out);
+  basic_unary_col_modifier& init();
+  basic_unary_col_modifier& init(pass& out);
+  basic_unary_col_modifier& set_out(pass& out);
+  basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
   void process_line();
   void process_stream();
 };
 
+typedef basic_unary_col_modifier<double (*)(double)> unary_col_modifier;
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // unary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class unary_col_adder : public pass {
+template<typename UnaryOperation> class basic_unary_col_adder : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -812,24 +815,26 @@ template<typename UnaryOperation> class unary_col_adder : public pass {
   typename std::vector<col_t>::iterator ci;
 
 public:
-  unary_col_adder();
-  unary_col_adder(pass& out);
-  unary_col_adder& init();
-  unary_col_adder& init(pass& out);
-  unary_col_adder& set_out(pass& out);
-  unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
+  basic_unary_col_adder();
+  basic_unary_col_adder(pass& out);
+  basic_unary_col_adder& init();
+  basic_unary_col_adder& init(pass& out);
+  basic_unary_col_adder& set_out(pass& out);
+  basic_unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
   void process_line();
   void process_stream();
 };
 
+typedef basic_unary_col_adder<double (*)(double)> unary_col_adder;
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // binary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename BinaryOperation> class binary_col_modifier : public pass {
+template<typename BinaryOperation> class basic_binary_col_modifier : public pass {
   struct inst_t
   {
     pcre* regex;
@@ -858,18 +863,20 @@ template<typename BinaryOperation> class binary_col_modifier : public pass {
   std::vector<new_col_t> new_columns;
 
 public:
-  binary_col_modifier();
-  binary_col_modifier(pass& out);
-  ~binary_col_modifier();
-  binary_col_modifier& init();
-  binary_col_modifier& init(pass& out);
-  binary_col_modifier& set_out(pass& out);
-  binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
+  basic_binary_col_modifier();
+  basic_binary_col_modifier(pass& out);
+  ~basic_binary_col_modifier();
+  basic_binary_col_modifier& init();
+  basic_binary_col_modifier& init(pass& out);
+  basic_binary_col_modifier& set_out(pass& out);
+  basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
 
   void process_token(const char* token);
   void process_line();
   void process_stream();
 };
+
+typedef basic_binary_col_modifier<double (*)(double, double)> binary_col_modifier;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
