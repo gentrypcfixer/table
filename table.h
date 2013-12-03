@@ -22,6 +22,7 @@ namespace table {
 
 void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
 void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end);
+void dtostr(double value, char* str, int prec);
 
 struct cstr_less {
   bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
@@ -817,6 +818,7 @@ template<typename UnaryOperation> class basic_unary_col_adder : public pass {
 public:
   basic_unary_col_adder();
   basic_unary_col_adder(pass& out);
+  ~basic_unary_col_adder();
   basic_unary_col_adder& init();
   basic_unary_col_adder& init(pass& out);
   basic_unary_col_adder& set_out(pass& out);
@@ -872,6 +874,7 @@ public:
   basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -1017,6 +1020,7 @@ public:
   base_converter& add_conv(const char* regex, int from, int to);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };

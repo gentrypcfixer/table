@@ -52,6 +52,53 @@ void generate_substitution(const char* token, const char* replace_with, const in
   }
 }
 
+static const double pow10[] = {1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0, 10000000.0, 100000000.0, 1000000000.0};
+
+static void strreverse(char* begin, char* end)
+{
+    char aux;
+    while (end > begin) aux = *end, *end-- = *begin, *begin++ = aux;
+}
+
+void dtostr(double value, char* str, int prec)
+{
+  if(isnan(value)) { str[0] = '\0'; return; }
+  if(value > (double)(0x7FFFFFFF)) { sprintf(str, "%.6g", value); return; }
+
+  // precision of >= 10 can lead to overflow errors
+  if (prec < 0) { prec = 0; }
+  else if (prec > 9) { prec = 9; }
+
+  bool neg = 0;
+  if(value < 0) { neg = 1; value = -value; }
+  int whole = (int)value;
+  double tmp = (value - whole) * pow10[prec];
+  uint32_t frac = (uint32_t)(tmp);
+  double diff = tmp - frac;
+
+  if(diff > 0.5) { ++frac; if(frac >= pow10[prec]) { frac = 0; ++whole; } } // handle rollover, e.g.  case 0.99 with prec 1 is 1.0
+  else if(diff == 0.5 && ((frac == 0) || (frac & 1))) { ++frac; } // if halfway, round up if odd, OR if last digit is 0.  That last part is strange
+
+  char* wstr = str;
+  if(prec == 0) {
+    diff = value - whole;
+    if(diff > 0.5) { ++whole; } // greater than 0.5, round up, e.g. 1.6 -> 2
+    else if(diff == 0.5 && (whole & 1)) { ++whole; } // exactly 0.5 and ODD, then round up; 1.5 -> 2, but 2.5 -> 2
+  }
+  else if(frac) {
+    int count = prec;
+    while(!(frac % 10)) { --count; frac /= 10; }
+    do { --count; *wstr++ = '0' + char(frac % 10); } while(frac /= 10);
+    while(count-- > 0) *wstr++ = '0';
+    *wstr++ = '.';
+  }
+
+  do { *wstr++ = '0' + char(whole % 10); } while(whole /= 10);
+  if(neg) *wstr++ = '-';
+  *wstr = '\0';
+  strreverse(str, wstr-1);
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // cstring_queue
@@ -130,12 +177,9 @@ pass::~pass() {}
 
 void pass::process_token(double token)
 {
-  if(isnan(token)) process_token("");
-  else {
-    char buf[32];
-    sprintf(buf, "%.6g", token);
-    process_token(buf);
-  }
+  char buf[32];
+  dtostr(token, buf, 6);
+  process_token(buf);
 }
 
 

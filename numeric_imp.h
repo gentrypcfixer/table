@@ -89,6 +89,7 @@ template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>:
 
 template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder() : buf(0) { init(); }
 template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder(pass& out) : buf(0) { init(out); }
+template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::~basic_unary_col_adder() { delete[] buf; }
 
 template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::init()
 {
@@ -245,6 +246,20 @@ template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperatio
   }
 
   ++column;
+}
+
+template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperation>::process_token(double token)
+{
+  if(first_row) { char buf[32]; dtostr(token, buf, 6); process_token(buf); }
+  else {
+    if(ci == columns.end() || (*ci).col != column) out->process_token(token);
+    else {
+      (*ci).val = token;
+      if((*ci).passthrough) out->process_token(token);
+      ++ci;
+    }
+    ++column;
+  }
 }
 
 template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperation>::process_line()

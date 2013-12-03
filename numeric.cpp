@@ -478,7 +478,7 @@ base_converter& base_converter::add_conv(const char* regex, int from, int to)
 void base_converter::process_token(const char* token)
 {
   if(first_row) {
-    if(!out) throw runtime_error("differ has no out");
+    if(!out) throw runtime_error("base_converter has no out");
     size_t len = strlen(token);
     conv_t c; c.from = -1; c.to = 0;
     for(vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
@@ -499,13 +499,23 @@ void base_converter::process_token(const char* token)
 
     if(next == token) out->process_token(token);
     else {
-      char buf[256];
       if(conv[column].to == 10) { out->process_token(dvalue); }
-      else if(conv[column].to == 8) { sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
-      else if(conv[column].to == 16) { sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
+      else if(conv[column].to == 8) { char buf[256]; sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
+      else if(conv[column].to == 16) { char buf[256]; sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
       else out->process_token(token);
     }
   }
+
+  ++column;
+}
+
+void base_converter::process_token(double token)
+{
+  if(first_row) { char buf[32]; dtostr(token, buf, 6); process_token(buf); return; }
+
+  if(conv[column].to == 8) { char buf[256]; sprintf(buf, "%#lo", (long int)token); out->process_token(buf); }
+  else if(conv[column].to == 16) { char buf[256]; sprintf(buf, "%#lx", (long int)token); out->process_token(buf); }
+  else out->process_token(token);
 
   ++column;
 }
