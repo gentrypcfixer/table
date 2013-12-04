@@ -22,7 +22,7 @@ namespace table {
 
 void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
 void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end);
-void dtostr(double value, char* str, int prec);
+int dtostr(double value, char* str, int prec = 6);
 
 struct cstr_less {
   bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
@@ -259,7 +259,7 @@ class threader : public pass
   pthread_t thread;
 
   void resize_write_chunk(size_t min_size);
-  void inc_write_chunk();
+  void inc_write_chunk(bool term = 1);
 
 public:
   friend void* threader_main(void*);
@@ -272,6 +272,7 @@ public:
   threader& set_out(pass& out);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -311,6 +312,7 @@ public:
   subset_tee& add_exception(bool regex, const char* key);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -337,6 +339,7 @@ public:
   ordered_tee& add_out(pass& out);
 
   void process_token(const char* token);
+  //void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -588,6 +591,7 @@ public:
   substitutor& add_exception(const char* regex);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -630,6 +634,7 @@ public:
   col_adder& add_exception(const char* regex);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -776,6 +781,7 @@ public:
   basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -825,6 +831,7 @@ public:
   basic_unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -952,6 +959,7 @@ public:
   summarizer& add_exception(const char* regex);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
@@ -1076,6 +1084,7 @@ public:
   variance_analyzer& add_exception(const char* regex);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };

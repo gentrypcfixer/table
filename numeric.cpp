@@ -247,6 +247,19 @@ void summarizer::process_token(const char* token)
   }
 }
 
+void summarizer::process_token(double token)
+{
+  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  const uint32_t& flags = *cfi;
+  if(flags & 1) {
+    if(group_tokens_next + 32 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    group_tokens_next += dtostr(token, group_tokens_next) + 1;
+  }
+  else if(flags) { *vi++ = token; }
+  ++cfi;
+}
+
 void summarizer::process_line()
 {
   if(first_line) {
@@ -511,7 +524,7 @@ void base_converter::process_token(const char* token)
 
 void base_converter::process_token(double token)
 {
-  if(first_row) { char buf[32]; dtostr(token, buf, 6); process_token(buf); return; }
+  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
 
   if(conv[column].to == 8) { char buf[256]; sprintf(buf, "%#lo", (long int)token); out->process_token(buf); }
   else if(conv[column].to == 16) { char buf[256]; sprintf(buf, "%#lx", (long int)token); out->process_token(buf); }
@@ -646,6 +659,20 @@ void variance_analyzer::process_token(const char* token)
     }
     ++cti;
   }
+}
+
+void variance_analyzer::process_token(double token)
+{
+  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  if(cti == column_type.end()) return;
+
+  if(*cti == 1) {
+    if(group_tokens_next + 32 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    group_tokens_next += dtostr(token, group_tokens_next) + 1;
+  }
+  else if(*cti == 2) { *vi++ = token; }
+  ++cti;
 }
 
 void variance_analyzer::process_line()

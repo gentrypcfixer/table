@@ -60,10 +60,10 @@ static void strreverse(char* begin, char* end)
     while (end > begin) aux = *end, *end-- = *begin, *begin++ = aux;
 }
 
-void dtostr(double value, char* str, int prec)
+int dtostr(double value, char* str, int prec)
 {
-  if(isnan(value)) { str[0] = '\0'; return; }
-  if(value > (double)(0x7FFFFFFF)) { sprintf(str, "%.6g", value); return; }
+  if(isnan(value)) { str[0] = '\0'; return 0; }
+  if(value > (double)(0x7FFFFFFF)) { return sprintf(str, "%.6g", value); }
 
   // precision of >= 10 can lead to overflow errors
   if (prec < 0) { prec = 0; }
@@ -97,6 +97,8 @@ void dtostr(double value, char* str, int prec)
   if(neg) *wstr++ = '-';
   *wstr = '\0';
   strreverse(str, wstr-1);
+
+  return wstr - str;
 }
 
 
@@ -178,7 +180,7 @@ pass::~pass() {}
 void pass::process_token(double token)
 {
   char buf[32];
-  dtostr(token, buf, 6);
+  dtostr(token, buf);
   process_token(buf);
 }
 
@@ -206,9 +208,10 @@ void* threader_main(void* data)
     pthread_mutex_unlock(&t->mutex);
 
     for(char* cur = t->chunks[t->read_chunk].start; 1; ++cur) {
-      if(*cur == '\x01') t->out->process_line();
-      else if(*cur == '\x02') { done = 1; break; }
-      else if(*cur == '\x03') break;
+      if(*cur == '\x01') { t->out->process_token(*reinterpret_cast<double*>(++cur)); cur += sizeof(double) - 1; }
+      else if(*cur == '\x02') { t->out->process_line(); }
+      else if(*cur == '\x03') { break; }
+      else if(*cur == '\x04') { done = 1; break; }
       else { size_t len = strlen(cur); t->out->process_token(cur); cur += len; }
     }
   }
@@ -226,9 +229,9 @@ void threader::resize_write_chunk(size_t min_size)
   chunks[write_chunk].end = chunks[write_chunk].start + min_size * 2;
 }
 
-void threader::inc_write_chunk()
+void threader::inc_write_chunk(bool term)
 {
-    *write_chunk_next++ = '\x03';
+    if(term) *write_chunk_next++ = '\x03';
 
     pthread_mutex_lock(&mutex);
     while((write_chunk + 1) % 8 == read_chunk)
@@ -291,6 +294,23 @@ void threader::process_token(const char* token)
   write_chunk_next += len + 1;
 }
 
+void threader::process_token(double token)
+{
+  if(!thread_created) {
+    if(!out) throw runtime_error("threader has no out");
+    pthread_mutex_init(&mutex, 0);
+    pthread_cond_init(&prod_cond, 0);
+    pthread_cond_init(&cons_cond, 0);
+    pthread_create(&thread, 0, threader_main, this);
+    thread_created = 1;
+  }
+
+  if(size_t(chunks[write_chunk].end - write_chunk_next) < size_t(sizeof(double) + 2)) inc_write_chunk();
+  *write_chunk_next++ = '\x01';
+  memcpy(write_chunk_next, &token, sizeof(double));
+  write_chunk_next += sizeof(double);
+}
+
 void threader::process_line()
 {
   if(!thread_created) {
@@ -300,7 +320,7 @@ void threader::process_line()
   }
 
   if(chunks[write_chunk].end - write_chunk_next < 2) inc_write_chunk();
-  *write_chunk_next++ = '\x01';
+  *write_chunk_next++ = '\x02';
 }
 
 void threader::process_stream()
@@ -311,8 +331,8 @@ void threader::process_stream()
     return;
   }
 
-  *write_chunk_next++ = '\x02';
-  inc_write_chunk();
+  *write_chunk_next++ = '\x04';
+  inc_write_chunk(0);
 
   pthread_join(thread, 0);
   pthread_cond_destroy(&cons_cond);
@@ -420,6 +440,16 @@ void subset_tee::process_token(const char* token)
   ++column;
 }
 
+void subset_tee::process_token(double token)
+{
+  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  for(; di != dest.end() && (*di).first == column; ++di)
+    (*di).second->process_token(token);
+
+  ++column;
+}
+
 void subset_tee::process_line()
 {
   first_row = 0;
@@ -483,6 +513,23 @@ void ordered_tee::process_token(const char* token)
   memcpy(next, token, len + 1);
   next += len + 1;
 }
+
+//void ordered_tee::process_token(double token)
+//{
+//  if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
+//  out[0]->process_token(token);
+//
+//  if(first_row) ++num_columns;
+//
+//  if(!next || 34 > size_t(end - next)) {
+//    if(next) *next++ = '\x03';
+//    size_t cap = 256 * 1024;
+//    data.push_back(new char[cap]);
+//    next = data.back();
+//    end = data.back() + cap;
+//  } 
+//  next += dtostr(token, next) + 1;
+//}
 
 void ordered_tee::process_line()
 {
@@ -1117,6 +1164,31 @@ void substitutor::process_token(const char* token)
   ++column;
 }
 
+void substitutor::process_token(double token)
+{
+  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  sub_t* s = column_subs[column];
+  if(!s) out->process_token(token);
+  else {
+    char sbuf[32];
+    int len = dtostr(token, sbuf);
+    int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, sbuf, len, 0, 0, ovector, 30);
+    if(rc < 0) {
+      if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor exception match error");
+      out->process_token(token);
+    }
+    else {
+      char* next = buf;
+      if(!rc) rc = 10;
+      generate_substitution(sbuf, s->to.c_str(), ovector, rc, buf, next, end);
+      out->process_token(buf);
+    }
+  }
+
+  ++column;
+}
+
 void substitutor::process_line()
 {
   if(first_line) {
@@ -1244,6 +1316,31 @@ void col_adder::process_token(const char* token)
         generate_substitution(token, s->to.c_str(), ovector, rc, buf, next, end);
         out->process_token(buf);
       }
+    }
+  }
+
+  ++column;
+}
+
+void col_adder::process_token(double token)
+{
+  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  sub_t* s = column_subs[column];
+  out->process_token(token);
+  if(s) {
+    char sbuf[32];
+    size_t len = dtostr(token, sbuf);
+    int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, sbuf, len, 0, 0, ovector, 30);
+    if(rc < 0) {
+      if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder exception match error");
+      out->process_token(token);
+    }
+    else {
+      char* next = buf;
+      if(!rc) rc = 10;
+      generate_substitution(sbuf, s->to.c_str(), ovector, rc, buf, next, end);
+      out->process_token(buf);
     }
   }
 

@@ -68,6 +68,16 @@ template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>:
   ++column;
 }
 
+template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_token(double token)
+{
+  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  if(!column_insts[column]) out->process_token(token);
+  else out->process_token((*column_insts[column])(token));
+
+  ++column;
+}
+
 template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_line()
 {
   if(!out) throw runtime_error("basic_unary_col_modifier has no out");
@@ -145,6 +155,18 @@ template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::pr
     }
     out->process_token(token);
   }
+
+  ++column;
+}
+
+template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::process_token(double token)
+{
+  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  if(ci != columns.end() && column == (*ci).col) {
+    do { (*ci++).val = token; } while(ci != columns.end() && column == (*ci).col);
+  }
+  out->process_token(token);
 
   ++column;
 }
@@ -250,16 +272,16 @@ template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperatio
 
 template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperation>::process_token(double token)
 {
-  if(first_row) { char buf[32]; dtostr(token, buf, 6); process_token(buf); }
+  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  if(ci == columns.end() || (*ci).col != column) out->process_token(token);
   else {
-    if(ci == columns.end() || (*ci).col != column) out->process_token(token);
-    else {
-      (*ci).val = token;
-      if((*ci).passthrough) out->process_token(token);
-      ++ci;
-    }
-    ++column;
+    (*ci).val = token;
+    if((*ci).passthrough) out->process_token(token);
+    ++ci;
   }
+
+  ++column;
 }
 
 template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperation>::process_line()
