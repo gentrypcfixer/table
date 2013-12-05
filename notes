@@ -1,7 +1,5 @@
 process_token(double)
-  * threader
   * all other passes
-  * store doubles for ordered_tee
 improve differ (binary col adder)
 ordered_tee, store doubles
 get rid of cstring_queue

@@ -339,7 +339,7 @@ public:
   ordered_tee& add_out(pass& out);
 
   void process_token(const char* token);
-  //void process_token(double token);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };

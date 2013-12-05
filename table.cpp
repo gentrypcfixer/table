@@ -514,22 +514,24 @@ void ordered_tee::process_token(const char* token)
   next += len + 1;
 }
 
-//void ordered_tee::process_token(double token)
-//{
-//  if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
-//  out[0]->process_token(token);
-//
-//  if(first_row) ++num_columns;
-//
-//  if(!next || 34 > size_t(end - next)) {
-//    if(next) *next++ = '\x03';
-//    size_t cap = 256 * 1024;
-//    data.push_back(new char[cap]);
-//    next = data.back();
-//    end = data.back() + cap;
-//  } 
-//  next += dtostr(token, next) + 1;
-//}
+void ordered_tee::process_token(double token)
+{
+  if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
+  out[0]->process_token(token);
+
+  if(first_row) ++num_columns;
+
+  if(!next || 2 + sizeof(double) > size_t(end - next)) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  } 
+  *next++ = '\x01';
+  memcpy(next, &token, sizeof(double));
+  next += sizeof(double);
+}
 
 void ordered_tee::process_line()
 {
@@ -553,9 +555,15 @@ void ordered_tee::process_stream()
     for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
       const char* p = *i;
       while(*p != '\03') {
-        (*oi)->process_token(p);
-        while(*p) ++p;
-        ++p;
+        if(*p == '\x01') {
+          (*oi)->process_token(*reinterpret_cast<const double*>(++p));
+          p += sizeof(double);
+        }
+        else {
+          (*oi)->process_token(p);
+          while(*p) ++p;
+          ++p;
+        }
         if(++column >= num_columns) {
           (*oi)->process_line();
           column = 0;

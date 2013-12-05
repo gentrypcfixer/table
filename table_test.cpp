@@ -103,18 +103,19 @@ int main(int argc, char * argv[])
 
   try {
     csv_file_writer w("data.csv");
+    csv_file_writer w2("data2.csv");
 
-    //ordered_tee t(w, w2);
+    ordered_tee t(w, w2);
     //tee t(w, w2);
 
     //differ d(w, "data C11", "data J71", "delta");
     //differ d2(d, "data C10", "data D10", "delta Trims");
 
-    unary_col_modifier um(w);
-    um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
+    //unary_col_modifier um(w);
+    //um.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", filter);
 
-    unary_col_adder ua(w);
-    ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
+    //unary_col_adder ua(w);
+    //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
     binary_col_modifier bm(w);
     bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
@@ -207,7 +208,7 @@ int main(int argc, char * argv[])
     //s.add_data(1, "PGM_OTP.*");
     //s.add_exception(0, "PGM_OTP_MAIN_TRIM0(43)");
 
-    threader th(bm);
+    //threader th(bm);
 
     base_converter bc(bm, "NPT\\d+", 16, 10);
 
