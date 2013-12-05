@@ -1432,6 +1432,33 @@ void col_pruner::process_token(const char* token)
   ++column;
 }
 
+void col_pruner::process_token(double token)
+{
+  if(passthrough) { out->process_token(token); return; }
+
+  if(first_row) {
+    if(!out) throw runtime_error("col_pruner has no out");
+  }
+  else if(!isnan(token)) {
+    if(!(has_data[column / 32] & (1 << (column % 32)))) {
+      has_data[column / 32] |= 1 << (column % 32);
+      ++columns_with_data;
+    }
+  }
+
+  if(!next || (sizeof(double) + 2) > size_t(end - next)) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  } 
+  *next++ = '\x01';
+  memcpy(next, &token, sizeof(double));
+  next += sizeof(double);
+  ++column;
+}
+
 void col_pruner::process_line()
 {
   if(passthrough) { out->process_line(); return; }
@@ -1451,9 +1478,15 @@ void col_pruner::process_line()
     for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
       const char* p = *i;
       while(*p != '\03') {
-        out->process_token(p);
-        while(*p) ++p;
-        ++p;
+        if(*p == '\x01') {
+          out->process_token(*reinterpret_cast<const double*>(++p));
+          p += sizeof(double);
+        }
+        else {
+          out->process_token(p);
+          while(*p) ++p;
+          ++p;
+        }
         if(++c >= num_columns) {
           out->process_line();
           c = 0;
@@ -1482,10 +1515,24 @@ void col_pruner::process_stream()
   for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
     const char* p = *i;
     while(*p != '\03') {
-      if(has_data[c / 32] & (1 << (c % 32)))
-        out->process_token(p);
-      while(*p) ++p;
-      ++p;
+      if(has_data[c / 32] & (1 << (c % 32))) {
+        if(*p == '\x01') {
+          out->process_token(*reinterpret_cast<const double*>(++p));
+          p += sizeof(double);
+        }
+        else {
+          out->process_token(p);
+          while(*p) ++p;
+          ++p;
+        }
+      }
+      else {
+        if(*p == '\x01') { p += 1 + sizeof(double); }
+        else {
+          while(*p) ++p;
+          ++p;
+        }
+      }
       if(++c >= num_columns) {
         out->process_line();
         c = 0;

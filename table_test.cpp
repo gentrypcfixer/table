@@ -103,9 +103,9 @@ int main(int argc, char * argv[])
 
   try {
     csv_file_writer w("data.csv");
-    csv_file_writer w2("data2.csv");
+    //csv_file_writer w2("data2.csv");
 
-    ordered_tee t(w, w2);
+    //ordered_tee t(w, w2);
     //tee t(w, w2);
 
     //differ d(w, "data C11", "data J71", "delta");
@@ -210,9 +210,9 @@ int main(int argc, char * argv[])
 
     //threader th(bm);
 
-    base_converter bc(bm, "NPT\\d+", 16, 10);
+    col_pruner cp(w);
 
-    //col_pruner cp(w);
+    base_converter bc(cp, "NPT\\d+", 16, 10);
 
     read_csv("raw.csv", bc);
 
