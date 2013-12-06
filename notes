@@ -1,8 +1,6 @@
 process_token(double)
   * stacker
   * splitter
-  * row_joiner
-  * combiner
 improve differ (binary col adder)
 get rid of cstring_queue
 sorter

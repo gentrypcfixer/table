@@ -471,6 +471,13 @@ public:
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 class row_joiner : public pass {
+  struct data_t {
+    std::vector<char*> data;
+    std::vector<char*>::iterator i;
+    char* next;
+    char* end;
+  };
+
   pass* out;
   std::vector<std::string> table_name;
   size_t table;
@@ -481,15 +488,17 @@ class row_joiner : public pass {
   std::vector<size_t> num_columns;
   std::vector<std::string> keys;
 
-  std::vector<cstring_queue> data;
+  std::vector<data_t> data;
 
 public:
   row_joiner();
   row_joiner(pass& out, const char* table_name = 0);
+  ~row_joiner();
   row_joiner& init(pass& out, const char* table_name = 0);
   row_joiner& add_table_name(const char* name = 0);
 
   void process_token(const char* token);
+  void process_token(double token);
   void process_line();
   void process_stream();
   void process_lines();

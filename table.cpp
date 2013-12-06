@@ -931,6 +931,13 @@ void splitter::process_stream()
 row_joiner::row_joiner() : out(0) {}
 row_joiner::row_joiner(pass& out, const char* table_name) { init(out, table_name); }
 
+row_joiner::~row_joiner()
+{
+  for(vector<data_t>::iterator i = data.begin(); i != data.end(); ++i)
+    for(vector<char*>::iterator j = (*i).data.begin(); j != (*i).data.end(); ++j)
+      delete[] *j;
+}
+
 row_joiner& row_joiner::init(pass& out, const char* table_name)
 {
   this->out = &out;
@@ -941,6 +948,9 @@ row_joiner& row_joiner::init(pass& out, const char* table_name)
   column = 0;
   num_columns.clear();
   keys.clear();
+  for(vector<data_t>::iterator i = data.begin(); i != data.end(); ++i)
+    for(vector<char*>::iterator j = (*i).data.begin(); j != (*i).data.end(); ++j)
+      delete[] *j;
   data.clear();
   add_table_name(table_name);
   return *this;
@@ -960,7 +970,20 @@ row_joiner& row_joiner::add_table_name(const char* name)
 
 void row_joiner::process_token(const char* token)
 {
-  if(!first_line) data[table].push(token);
+  if(!first_line) {
+    size_t len = strlen(token);
+    data_t& d = data[table];
+    if(!d.next || (len + 2) > size_t(d.end - d.next)) {
+      if(d.next) *d.next++ = '\x03';
+      size_t cap = 256 * 1024;
+      if(cap < len + 2) cap = len + 2;
+      d.data.push_back(new char[cap]);
+      d.next = d.data.back();
+      d.end = d.data.back() + cap;
+    }
+    memcpy(d.next, token, len + 1);
+    d.next += len + 1;
+  }
   else {
     if(!more_lines) {
       if(table >= table_name.size()) add_table_name();
@@ -978,11 +1001,30 @@ void row_joiner::process_token(const char* token)
   }
 }
 
+void row_joiner::process_token(double token)
+{
+  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+
+  data_t& d = data[table];
+  if(!d.next || (sizeof(double) + 2) > size_t(d.end - d.next)) {
+    if(d.next) *d.next++ = '\x03';
+    size_t cap = 256 * 1024;
+    d.data.push_back(new char[cap]);
+    d.next = d.data.back();
+    d.end = d.data.back() + cap;
+  }
+  *d.next++ = '\x01';
+  memcpy(d.next, &token, sizeof(double));
+  d.next += sizeof(double);
+}
+
 void row_joiner::process_line()
 {
   if(first_line) {
     first_line = 0;
     data.resize(data.size() + 1);
+    data.back().next = 0;
+    data.back().end = 0;
     if(more_lines) {
       if(column != num_columns[table]) throw runtime_error("num_columns doesn't match");
       column = 0;
@@ -1032,27 +1074,46 @@ void row_joiner::process_lines()
     out->process_line();
   }
 
-  vector<size_t>::const_iterator nci = num_columns.begin();
-  vector<cstring_queue>::iterator di = data.begin();
-  while(!(*di).empty()) {
-    for(size_t col = 0; col < (*nci) && !(*di).empty(); ++col) {
-      out->process_token((*di).front());
-      (*di).pop();
+  for(vector<data_t>::iterator di = data.begin(); di != data.end(); ++di) {
+    data_t& d = *di;
+    d.i = d.data.begin();
+    if(d.i == d.data.end()) d.next = 0;
+    else {
+      *d.next++ = '\x03';
+      d.next = *d.i;
     }
+  }
 
-    //next table
-    ++di;
-    ++nci;
-    if(di == data.end()) {
-      out->process_line();
-      di = data.begin();
-      nci = num_columns.begin();
+  bool done = 0;
+  while(!done) { //line loop
+    vector<size_t>::const_iterator nci = num_columns.begin();
+    for(vector<data_t>::iterator di = data.begin(); di != data.end(); ++di, ++nci) { // table loop
+      data_t& d = *di;
+      for(size_t col = 0; col < (*nci); ++col) {
+        if(*d.next == '\x03') {
+          if(++d.i != d.data.end()) d.next = *d.i;
+          else { d.next = 0; done = 1; break; }
+        }
+        if(*d.next == '\x01') {
+          out->process_token(*reinterpret_cast<const double*>(++d.next));
+          d.next += sizeof(double);
+        }
+        else {
+          out->process_token(d.next);
+          while(*d.next) ++d.next;
+          ++d.next;
+        }
+      }
     }
+    if(!done) out->process_line();
   }
 
   table = 0;
   first_line = 1;
   more_lines = 1;
+  for(vector<data_t>::iterator i = data.begin(); i != data.end(); ++i)
+    for(vector<char*>::iterator j = (*i).data.begin(); j != (*i).data.end(); ++j)
+      delete[] *j;
   data.clear();
 }
 

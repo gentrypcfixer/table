@@ -117,8 +117,8 @@ int main(int argc, char * argv[])
     //unary_col_adder ua(w);
     //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
-    binary_col_modifier bm(w);
-    bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
+    //binary_col_modifier bm(w);
+    //bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
@@ -210,20 +210,20 @@ int main(int argc, char * argv[])
 
     //threader th(bm);
 
-    col_pruner cp(w);
+    //col_pruner cp(w);
 
-    base_converter bc(cp, "NPT\\d+", 16, 10);
+    //base_converter bc(cp, "NPT\\d+", 16, 10);
 
-    read_csv("raw.csv", bc);
+    //read_csv("raw.csv", bc);
 
-    //row_joiner rj(w);
+    row_joiner rj(w);
 
-    //read_csv("test1.csv", rj);
-    //read_csv("test2.csv", rj);
-    //rj.process_lines();
-    //read_csv("test3.csv", rj);
-    //read_csv("test4.csv", rj);
-    //rj.process();
+    read_csv("test1.csv", rj);
+    read_csv("test2.csv", rj);
+    rj.process_lines();
+    read_csv("test3.csv", rj);
+    read_csv("test4.csv", rj);
+    rj.process();
   }
   catch(exception& e) { cerr << "Exception: " << e.what() << endl; }
   catch(...) { cerr << "Unknown Exception" << endl; }
