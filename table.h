@@ -20,7 +20,7 @@ inline void pcre_free_study(void *p) { free(p); }
 
 namespace table {
 
-void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end = 0);
+void resize_buffer(char*& buf, char*& next, char*& end, size_t min_to_add = 0, char** resize_end = 0);
 void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end);
 int dtostr(double value, char* str, int prec = 6);
 
@@ -227,7 +227,7 @@ class pass {
 public:
   virtual ~pass();
 
-  virtual void process_token(const char* token) = 0;
+  virtual void process_token(const char* token, size_t len) = 0;
   virtual void process_token(double token);
   virtual void process_line() = 0;
   virtual void process_stream() = 0;
@@ -271,7 +271,7 @@ public:
   threader& init(pass& out);
   threader& set_out(pass& out);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -311,7 +311,7 @@ public:
   subset_tee& add_data(bool regex, const char* key);
   subset_tee& add_exception(bool regex, const char* key);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -338,7 +338,7 @@ public:
   ordered_tee& init(pass& out1, pass& out2);
   ordered_tee& add_out(pass& out);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -394,7 +394,7 @@ public:
   stacker& set_out(pass& out);
   stacker& add_action(bool regex, const char* key, stack_action_e action);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
 };
@@ -460,7 +460,7 @@ public:
   splitter& set_out(pass& out);
   splitter& add_action(bool regex, const char* key, split_action_e action);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
 };
@@ -497,7 +497,7 @@ public:
   row_joiner& init(pass& out, const char* table_name = 0);
   row_joiner& add_table_name(const char* name = 0);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -599,7 +599,7 @@ public:
   substitutor& add(const char* regex, const char* from, const char* to);
   substitutor& add_exception(const char* regex);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -642,7 +642,7 @@ public:
   col_adder& add(const char* regex, const char* new_key, const char* from, const char* to);
   col_adder& add_exception(const char* regex);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -673,7 +673,7 @@ public:
   col_pruner& init(pass& out);
   col_pruner& set_out(pass& out);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -701,7 +701,7 @@ public:
   combiner& set_out(pass& out);
   combiner& add_pair(const char* from, const char* to);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
 };
@@ -722,7 +722,7 @@ protected:
   void base_init();
 
 public:
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
 };
 
@@ -790,7 +790,7 @@ public:
   basic_unary_col_modifier& set_out(pass& out);
   basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -840,7 +840,7 @@ public:
   basic_unary_col_adder& set_out(pass& out);
   basic_unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -890,7 +890,7 @@ public:
   basic_binary_col_modifier& set_out(pass& out);
   basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -968,7 +968,7 @@ public:
   summarizer& add_data(const char* regex, uint32_t flags);
   summarizer& add_exception(const char* regex);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -999,7 +999,7 @@ public:
   ~differ();
   void init(pass& out, const char* base_key, const char* comp_key, const char* keyword);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
 };
@@ -1037,7 +1037,7 @@ public:
   base_converter& set_out(pass& out);
   base_converter& add_conv(const char* regex, int from, int to);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();
@@ -1093,7 +1093,7 @@ public:
   variance_analyzer& add_data(const char* regex);
   variance_analyzer& add_exception(const char* regex);
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
   void process_stream();

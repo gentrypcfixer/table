@@ -12,7 +12,7 @@ using namespace std::tr1;
 
 namespace table {
 
-void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end)
+void resize_buffer(char*& buf, char*& next, char*& end, size_t min_to_add, char** resize_end)
 {
   char* old = buf;
   size_t size = next - buf;
@@ -20,6 +20,7 @@ void resize_buffer(char*& buf, char*& next, char*& end, char** resize_end)
   size_t resize = resize_end ? end - *resize_end : 0;
 
   size_t new_cap = cap * 2;
+  if(size + min_to_add > new_cap) new_cap = size + min_to_add;
   buf = new char[new_cap];
   memcpy(buf, old, size);
   delete[] old;
@@ -180,8 +181,8 @@ pass::~pass() {}
 void pass::process_token(double token)
 {
   char buf[32];
-  dtostr(token, buf);
-  process_token(buf);
+  size_t len = dtostr(token, buf);
+  process_token(buf, len);
 }
 
 
@@ -212,7 +213,7 @@ void* threader_main(void* data)
       else if(*cur == '\x02') { t->out->process_line(); }
       else if(*cur == '\x03') { break; }
       else if(*cur == '\x04') { done = 1; break; }
-      else { size_t len = strlen(cur); t->out->process_token(cur); cur += len; }
+      else { size_t len = strlen(cur); t->out->process_token(cur, len); cur += len; }
     }
   }
 
@@ -274,7 +275,7 @@ threader& threader::init() {
 threader& threader::init(pass& out) { init(); return set_out(out); }
 threader& threader::set_out(pass& out) { this->out = &out; return *this; }
 
-void threader::process_token(const char* token)
+void threader::process_token(const char* token, size_t len)
 {
   if(!thread_created) {
     if(!out) throw runtime_error("threader has no out");
@@ -285,13 +286,12 @@ void threader::process_token(const char* token)
     thread_created = 1;
   }
 
-  size_t len = strlen(token);
   if(size_t(chunks[write_chunk].end - write_chunk_next) < len + 2) {
     if(write_chunk_next == chunks[write_chunk].start) resize_write_chunk(len + 2);
     else inc_write_chunk();
   }
-  memcpy(write_chunk_next, token, len + 1);
-  write_chunk_next += len + 1;
+  memcpy(write_chunk_next, token, len); write_chunk_next += len;
+  *write_chunk_next++ = '\0';
 }
 
 void threader::process_token(double token)
@@ -395,13 +395,12 @@ subset_tee& subset_tee::add_exception(bool regex, const char* key)
   return *this;
 }
 
-void subset_tee::process_token(const char* token)
+void subset_tee::process_token(const char* token, size_t len)
 {
   if(first_row) {
     for(std::map<pass*, subset_tee_dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
       subset_tee_dest_data_t& d = (*di).second;
 
-      size_t len = strlen(token);
       bool add = 0;
       set<string>::const_iterator ki = d.key.find(token);
       if(ki != d.key.end()) add = 1;
@@ -428,13 +427,13 @@ void subset_tee::process_token(const char* token)
         dest.back().first = column;
         dest.back().second = (*di).first;
         d.has_data = 1;
-        (*di).first->process_token(token);
+        (*di).first->process_token(token, len);
       }
     }
   }
   else {
     for(; di != dest.end() && (*di).first == column; ++di)
-      (*di).second->process_token(token);
+      (*di).second->process_token(token, len);
   }
 
   ++column;
@@ -442,7 +441,7 @@ void subset_tee::process_token(const char* token)
 
 void subset_tee::process_token(double token)
 {
-  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   for(; di != dest.end() && (*di).first == column; ++di)
     (*di).second->process_token(token);
@@ -494,14 +493,13 @@ ordered_tee& ordered_tee::init()
 ordered_tee& ordered_tee::init(pass& out1, pass& out2) { init(); out.push_back(&out1); out.push_back(&out2); return *this; }
 ordered_tee& ordered_tee::add_out(pass& out) { this->out.push_back(&out); return *this; }
 
-void ordered_tee::process_token(const char* token)
+void ordered_tee::process_token(const char* token, size_t len)
 {
   if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
-  out[0]->process_token(token);
+  out[0]->process_token(token, len);
 
   if(first_row) ++num_columns;
 
-  size_t len = strlen(token);
   if(!next || (len + 2) > size_t(end - next)) {
     if(next) *next++ = '\x03';
     size_t cap = 256 * 1024;
@@ -510,8 +508,8 @@ void ordered_tee::process_token(const char* token)
     next = data.back();
     end = data.back() + cap;
   } 
-  memcpy(next, token, len + 1);
-  next += len + 1;
+  memcpy(next, token, len); next += len;
+  *next++ = '\0';
 }
 
 void ordered_tee::process_token(double token)
@@ -560,9 +558,9 @@ void ordered_tee::process_stream()
           p += sizeof(double);
         }
         else {
-          (*oi)->process_token(p);
-          while(*p) ++p;
-          ++p;
+          size_t len = strlen(p);
+          (*oi)->process_token(p, len);
+          p += len + 1;
         }
         if(++column >= num_columns) {
           (*oi)->process_line();
@@ -627,7 +625,7 @@ stacker& stacker::add_action(bool regex, const char* key, stack_action_e action)
   return *this;
 }
 
-void stacker::process_token(const char* token)
+void stacker::process_token(const char* token, size_t len)
 {
   if(first_line) {
     if(!out) throw runtime_error("stacker has no out");
@@ -635,7 +633,6 @@ void stacker::process_token(const char* token)
     map<string, stack_action_e>::iterator i = keyword_actions.find(token);
     if(i != keyword_actions.end()) action = (*i).second;
     else {
-      size_t len = strlen(token);
       for(vector<regex_stack_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
         int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
         if(rc >= 0) { action = (*j).action; break; }
@@ -643,7 +640,7 @@ void stacker::process_token(const char* token)
       }
     }
     actions.push_back(action);
-    if(action == ST_LEAVE) { leave_tokens.push(token); last_leave = column; out->process_token(token); }
+    if(action == ST_LEAVE) { leave_tokens.push(token); last_leave = column; out->process_token(token, len); }
     else if(action == ST_STACK) stack_keys.push_back(token);
   }
   else {
@@ -652,9 +649,9 @@ void stacker::process_token(const char* token)
       leave_tokens.push(token);
       if(column == last_leave) {
         for(stack_column = 0; !stack_tokens.empty(); ++stack_column) {
-          for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) { out->process_token(*i); }
-          out->process_token(stack_keys[stack_column].c_str());
-          out->process_token(stack_tokens.front());
+          for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) { out->process_token(*i, strlen(*i)); }
+          out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+          out->process_token(stack_tokens.front(), strlen(stack_tokens.front()));
           stack_tokens.pop();
           out->process_line();
         }
@@ -663,9 +660,9 @@ void stacker::process_token(const char* token)
     else if(actions[column] == ST_STACK) { 
       if(column < last_leave) stack_tokens.push(token);
       else {
-        for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) out->process_token(*i);
-        out->process_token(stack_keys[stack_column++].c_str());
-        out->process_token(token);
+        for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) out->process_token(*i, strlen(*i));
+        out->process_token(stack_keys[stack_column++].c_str(), stack_keys[stack_column++].size());
+        out->process_token(token, len);
         out->process_line();
       }
     }
@@ -678,8 +675,8 @@ void stacker::process_line()
 {
   if(first_line) {
     if(!out) throw runtime_error("stacker has no out");
-    out->process_token("keyword");
-    out->process_token("data");
+    out->process_token("keyword", 7);
+    out->process_token("data", 4);
     out->process_line();
     first_line = 0;
   }
@@ -768,7 +765,7 @@ splitter& splitter::add_action(bool regex, const char* key, split_action_e actio
   return *this;
 }
 
-void splitter::process_token(const char* token)
+void splitter::process_token(const char* token, size_t len)
 {
   if(first_line) {
     if(!out) throw runtime_error("splitter has no out");
@@ -776,7 +773,6 @@ void splitter::process_token(const char* token)
     map<string, split_action_e>::iterator i = keyword_actions.find(token);
     if(i != keyword_actions.end()) action = (*i).second;
     else {
-      size_t len = strlen(token);
       for(vector<regex_split_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
         int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
         if(rc >= 0) { action = (*j).action; break; }
@@ -789,25 +785,19 @@ void splitter::process_token(const char* token)
   }
   else {
     if(actions[column] == SP_GROUP) {
-      for(const char* p = token; 1; ++p) {
-        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-        *group_tokens_next++ = *p;
-        if(!*p) break;
-      }
+      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = '\0';
     }
     else if(actions[column] == SP_SPLIT_BY) {
-      for(const char* p = token; 1; ++p) {
-        if(split_by_tokens_next >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end);
-        *split_by_tokens_next++ = *p;
-        if(!*p) break;
-      }
+      if(split_by_tokens_next + len >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end, len + 1);
+      memcpy(split_by_tokens_next, token, len); split_by_tokens_next += len;
+      *split_by_tokens_next++ = '\0';
     }
     else if(actions[column] == SP_SPLIT) {
-      for(const char* p = token; 1; ++p) {
-        if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
-        *split_tokens_next++ = *p;
-        if(!*p) break;
-      }
+      if(split_tokens_next + len >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end, len + 1);
+      memcpy(split_tokens_next, token, len); split_tokens_next += len;
+      *split_tokens_next++ = '\0';
     }
   }
 
@@ -887,13 +877,13 @@ void splitter::process_stream()
   if(!out) throw runtime_error("splitter has no out");
 
   for(vector<string>::const_iterator i = group_keys.begin(); i != group_keys.end(); ++i)
-    out->process_token((*i).c_str());
+    out->process_token((*i).c_str(), (*i).size());
   {
     vector<char*> osk(out_split_keys.size());
     for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
       osk[(*i).second] = (*i).first;
     for(vector<char*>::const_iterator i = osk.begin(); i != osk.end(); ++i)
-      out->process_token(*i);
+      out->process_token(*i, strlen(*i));
   }
   out->process_line();
 
@@ -903,15 +893,16 @@ void splitter::process_stream()
   out_split_keys.clear();
 
   for(data_t::const_iterator i = data.begin(); i != data.end(); ++i) {
-    for(char* p = (*i).first; *p != '\x03'; ++p) {
-      out->process_token(p);
-      while(*p) ++p;
+    for(char* p = (*i).first; *p != '\x03';) {
+      size_t len = strlen(p);
+      out->process_token(p, len);
+      p += len + 1;
     }
     size_t tokens = 0;
     for(vector<string>::const_iterator j = (*i).second.begin(); j != (*i).second.end(); ++j, ++tokens)
-      out->process_token((*j).c_str());
+      out->process_token((*j).c_str(), (*j).size());
     while(tokens++ < num_out_split_keys)
-      out->process_token("");
+      out->process_token("", 0);
     out->process_line();
   }
 
@@ -968,10 +959,9 @@ row_joiner& row_joiner::add_table_name(const char* name)
   return *this;
 }
 
-void row_joiner::process_token(const char* token)
+void row_joiner::process_token(const char* token, size_t len)
 {
   if(!first_line) {
-    size_t len = strlen(token);
     data_t& d = data[table];
     if(!d.next || (len + 2) > size_t(d.end - d.next)) {
       if(d.next) *d.next++ = '\x03';
@@ -1003,7 +993,7 @@ void row_joiner::process_token(const char* token)
 
 void row_joiner::process_token(double token)
 {
-  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   data_t& d = data[table];
   if(!d.next || (sizeof(double) + 2) > size_t(d.end - d.next)) {
@@ -1069,7 +1059,7 @@ void row_joiner::process_lines()
         }
         (*ki) = (*ki) + " of " + table_name[t];
       }
-      out->process_token((*ki).c_str());
+      out->process_token((*ki).c_str(), (*ki).size());
     }
     out->process_line();
   }
@@ -1099,9 +1089,9 @@ void row_joiner::process_lines()
           d.next += sizeof(double);
         }
         else {
-          out->process_token(d.next);
-          while(*d.next) ++d.next;
-          ++d.next;
+          size_t len = strlen(d.next);
+          out->process_token(d.next, len);
+          d.next += len + 1;
         }
       }
     }
@@ -1191,11 +1181,10 @@ substitutor& substitutor::add_exception(const char* key)
   return *this;
 }
 
-void substitutor::process_token(const char* token)
+void substitutor::process_token(const char* token, size_t len)
 {
   if(first_line) {
     sub_t* s = 0;
-    size_t len = strlen(token);
     for(vector<sub_t>::iterator si = subs.begin(); si != subs.end(); ++si) {
       int ovector[30]; int rc = pcre_exec((*si).regex, 0, token, len, 0, 0, ovector, 30);
       if(rc >= 0) { s = &(*si); break; }
@@ -1209,23 +1198,22 @@ void substitutor::process_token(const char* token)
       }
     }
     column_subs.push_back(s);
-    out->process_token(token);
+    out->process_token(token, len);
   }
   else {
     sub_t* s = column_subs[column];
-    if(!s) out->process_token(token);
+    if(!s) out->process_token(token, len);
     else {
-      size_t len = strlen(token);
       int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, token, len, 0, 0, ovector, 30);
       if(rc < 0) {
         if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor exception match error");
-        out->process_token(token);
+        out->process_token(token, len);
       }
       else {
         char* next = buf;
         if(!rc) rc = 10;
         generate_substitution(token, s->to.c_str(), ovector, rc, buf, next, end);
-        out->process_token(buf);
+        out->process_token(buf, next - buf - 1);
       }
     }
   }
@@ -1235,7 +1223,7 @@ void substitutor::process_token(const char* token)
 
 void substitutor::process_token(double token)
 {
-  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   sub_t* s = column_subs[column];
   if(!s) out->process_token(token);
@@ -1251,7 +1239,7 @@ void substitutor::process_token(double token)
       char* next = buf;
       if(!rc) rc = 10;
       generate_substitution(sbuf, s->to.c_str(), ovector, rc, buf, next, end);
-      out->process_token(buf);
+      out->process_token(buf, next - buf - 1);
     }
   }
 
@@ -1341,11 +1329,10 @@ col_adder& col_adder::add_exception(const char* key)
   return *this;
 }
 
-void col_adder::process_token(const char* token)
+void col_adder::process_token(const char* token, size_t len)
 {
   if(first_line) {
     sub_t* s = 0;
-    size_t len = strlen(token);
     int ovector[30];
     int rc = 0;
     for(vector<sub_t>::iterator si = subs.begin(); si != subs.end(); ++si) {
@@ -1361,29 +1348,28 @@ void col_adder::process_token(const char* token)
       }
     }
     column_subs.push_back(s);
-    out->process_token(token);
+    out->process_token(token, len);
     if(s) {
       char* next = buf;
       if(!rc) rc = 10;
       generate_substitution(token, s->new_key.c_str(), ovector, rc, buf, next, end);
-      out->process_token(buf);
+      out->process_token(buf, next - buf - 1);
     }
   }
   else {
     sub_t* s = column_subs[column];
-    out->process_token(token);
+    out->process_token(token, len);
     if(s) {
-      size_t len = strlen(token);
       int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, token, len, 0, 0, ovector, 30);
       if(rc < 0) {
         if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder exception match error");
-        out->process_token(token);
+        out->process_token(token, len);
       }
       else {
         char* next = buf;
         if(!rc) rc = 10;
         generate_substitution(token, s->to.c_str(), ovector, rc, buf, next, end);
-        out->process_token(buf);
+        out->process_token(buf, next - buf - 1);
       }
     }
   }
@@ -1393,7 +1379,7 @@ void col_adder::process_token(const char* token)
 
 void col_adder::process_token(double token)
 {
-  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   sub_t* s = column_subs[column];
   out->process_token(token);
@@ -1409,7 +1395,7 @@ void col_adder::process_token(double token)
       char* next = buf;
       if(!rc) rc = 10;
       generate_substitution(sbuf, s->to.c_str(), ovector, rc, buf, next, end);
-      out->process_token(buf);
+      out->process_token(buf, next - buf - 1);
     }
   }
 
@@ -1465,9 +1451,9 @@ col_pruner& col_pruner::init()
 col_pruner& col_pruner::init(pass& out) { init(); return set_out(out); }
 col_pruner& col_pruner::set_out(pass& out) { this->out = &out; return *this; }
 
-void col_pruner::process_token(const char* token)
+void col_pruner::process_token(const char* token, size_t len)
 {
-  if(passthrough) { out->process_token(token); return; }
+  if(passthrough) { out->process_token(token, len); return; }
 
   if(first_row) {
     if(!out) throw runtime_error("col_pruner has no out");
@@ -1479,7 +1465,6 @@ void col_pruner::process_token(const char* token)
     }
   }
 
-  size_t len = strlen(token);
   if(!next || (len + 2) > size_t(end - next)) {
     if(next) *next++ = '\x03';
     size_t cap = 256 * 1024;
@@ -1488,8 +1473,8 @@ void col_pruner::process_token(const char* token)
     next = data.back();
     end = data.back() + cap;
   } 
-  memcpy(next, token, len + 1);
-  next += len + 1;
+  memcpy(next, token, len); next += len;
+  *next++ = '\0';
   ++column;
 }
 
@@ -1544,9 +1529,9 @@ void col_pruner::process_line()
           p += sizeof(double);
         }
         else {
-          out->process_token(p);
-          while(*p) ++p;
-          ++p;
+          size_t len = strlen(p);
+          out->process_token(p, len);
+          p += len + 1;;
         }
         if(++c >= num_columns) {
           out->process_line();
@@ -1582,9 +1567,9 @@ void col_pruner::process_stream()
           p += sizeof(double);
         }
         else {
-          out->process_token(p);
-          while(*p) ++p;
-          ++p;
+          size_t len = strlen(p);
+          out->process_token(p, len);
+          p += len + 1;;
         }
       }
       else {
@@ -1645,7 +1630,7 @@ combiner& combiner::add_pair(const char* from, const char* to)
   return *this;
 }
 
-void combiner::process_token(const char* token)
+void combiner::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!out) throw runtime_error("combiner has no out");
@@ -1714,7 +1699,7 @@ void combiner::process_line()
     for(int i = 0; i <= max_out_index; ++i) {
       vector<int>::iterator it = find(remap_indexes.begin(), remap_indexes.end(), i);
       if(it == remap_indexes.end()) throw runtime_error("wth");
-      out->process_token(tokens[distance(remap_indexes.begin(), it)].c_str());
+      out->process_token(tokens[distance(remap_indexes.begin(), it)].c_str(), tokens[distance(remap_indexes.begin(), it)].size());
     }
 
     //setup for second line
@@ -1724,7 +1709,7 @@ void combiner::process_line()
   }
   else {
     for(vector<string>::iterator i = tokens.begin(); i != tokens.end(); ++i) {
-      out->process_token((*i).c_str());
+      out->process_token((*i).c_str(), (*i).size());
       (*i).clear();
     }
   }
@@ -1751,13 +1736,12 @@ void csv_writer_base::base_init()
   column = 0;
 }
 
-void csv_writer_base::process_token(const char* token)
+void csv_writer_base::process_token(const char* token, size_t len)
 {
   if(column) out->sputc(',');
   else if(!out) throw runtime_error("csv_writer has no out");
 
-  for(const char* p = token; *p; ++p)
-    out->sputc(*p);
+  out->sputn(token, len);
 
   ++column;
 }
@@ -1841,8 +1825,8 @@ void read_csv(streambuf* in, pass& out)
       else if(c == '\n') {
         if(!blank) {
           if(next >= end) resize_buffer(buf, next, end);
-          *next++ = '\0';
-          out.process_token(buf);
+          *next = '\0';
+          out.process_token(buf, next - buf);
           next = buf;
           ++column;
           if(!line) { num_keys = column; }
@@ -1855,8 +1839,8 @@ void read_csv(streambuf* in, pass& out)
       }
       else if(c == ',') {
         if(next >= end) resize_buffer(buf, next, end);
-        *next++ = '\0';
-        out.process_token(buf);
+        *next = '\0';
+        out.process_token(buf, next - buf);
         next = buf;
         ++column;
         blank = 0;

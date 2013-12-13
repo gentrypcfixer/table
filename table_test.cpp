@@ -30,12 +30,12 @@ public:
     values.resize(4);
   }
 
-  void process_token(const char* token);
+  void process_token(const char* token, size_t len);
   void process_line();
   void process_stream() { out->process_stream(); }
 };
 
-void calculator::process_token(const char* token)
+void calculator::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!strcmp(token, "EVS_VWVT_BLK(1)")) columns[0] = column;
@@ -47,7 +47,7 @@ void calculator::process_token(const char* token)
     vector<int>::iterator i = find(columns.begin(), columns.end(), column);
     if(i != columns.end()) { values[distance(columns.begin(), i)] = token; }
   }
-  out->process_token(token);
+  out->process_token(token, len);
 
   ++column;
 }
@@ -57,8 +57,8 @@ void calculator::process_line()
   if(first_row) {
     for(vector<int>::const_iterator i = columns.begin(); i != columns.end(); ++i)
       if((*i) < 0) throw runtime_error("calculator couldn't find a column");
-    out->process_token("ERS_VOLT(1)");
-    out->process_token("ERS_VOLT(2)");
+    out->process_token("ERS_VOLT(1)", 11);
+    out->process_token("ERS_VOLT(2)", 11);
     first_row = 0;
   }
   else {
@@ -68,8 +68,8 @@ void calculator::process_line()
       bool blank = 0;
       { istringstream ss(values[i]); ss >> v1; if(!ss || v1 < 0.0) blank = 1; }
       { istringstream ss(values[i + 2]); ss >> v2; if(!ss || v2 < 0.0) blank = 1; }
-      if(blank) out->process_token("");
-      else { stringstream ss; ss << v1 - v2; out->process_token(ss.str().c_str()); }
+      if(blank) out->process_token(numeric_limits<double>::quiet_NaN());
+      else { out->process_token(v1 - v2); }
     }
   }
   out->process_line();
@@ -117,8 +117,8 @@ int main(int argc, char * argv[])
     //unary_col_adder ua(w);
     //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
-    //binary_col_modifier bm(w);
-    //bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
+    binary_col_modifier bm(w);
+    bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");
@@ -212,18 +212,18 @@ int main(int argc, char * argv[])
 
     //col_pruner cp(w);
 
-    //base_converter bc(cp, "NPT\\d+", 16, 10);
+    base_converter bc(bm, "NPT\\d+", 16, 10);
 
-    //read_csv("raw.csv", bc);
+    read_csv("raw.csv", bc);
 
-    row_joiner rj(w);
+    //row_joiner rj(w);
 
-    read_csv("test1.csv", rj);
-    read_csv("test2.csv", rj);
-    rj.process_lines();
-    read_csv("test3.csv", rj);
-    read_csv("test4.csv", rj);
-    rj.process();
+    //read_csv("test1.csv", rj);
+    //read_csv("test2.csv", rj);
+    //rj.process_lines();
+    //read_csv("test3.csv", rj);
+    //read_csv("test4.csv", rj);
+    //rj.process();
   }
   catch(exception& e) { cerr << "Exception: " << e.what() << endl; }
   catch(...) { cerr << "Unknown Exception" << endl; }

@@ -1,9 +1,11 @@
+process_token with c_str pass len also
+improve differ (binary col adder)
 process_token(double)
   * stacker
   * splitter
-improve differ (binary col adder)
+resize_buffer with min size arg
+  * splitter
+  * variance_analyzer
 get rid of cstring_queue
 sorter
 check allocations
-process_token with c_str pass len also
-testing

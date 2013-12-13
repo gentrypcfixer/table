@@ -152,16 +152,15 @@ summarizer& summarizer::add_exception(const char* regex)
   return *this;
 }
 
-void summarizer::process_token(const char* token)
+void summarizer::process_token(const char* token, size_t len)
 {
   if(first_line) {
     if(!out) throw runtime_error("summarizer has no out");
 
-    size_t len = strlen(token);
     uint32_t flags = 0;
     for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
       int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { out->process_token(token); flags = 1; break; }
+      if(rc >= 0) { out->process_token(token, len); flags = 1; break; }
       else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
     }
     if(!flags) {
@@ -178,49 +177,49 @@ void summarizer::process_token(const char* token)
     }
 
     if(flags & SUM_MISSING) {
-      if(group_tokens_next + len + 9 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 10 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 10);
       memcpy(group_tokens_next, "MISSING(", 8); group_tokens_next += 8;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_COUNT) {
-      if(group_tokens_next + len + 7 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 8 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 8);
       memcpy(group_tokens_next, "COUNT(", 6); group_tokens_next += 6;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_SUM) {
-      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
       memcpy(group_tokens_next, "SUM(", 4); group_tokens_next += 4;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_MIN) {
-      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
       memcpy(group_tokens_next, "MIN(", 4); group_tokens_next += 4;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_MAX) {
-      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
       memcpy(group_tokens_next, "MAX(", 4); group_tokens_next += 4;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_AVG) {
-      if(group_tokens_next + len + 5 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
       memcpy(group_tokens_next, "AVG(", 4); group_tokens_next += 4;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_VARIANCE) {
-      if(group_tokens_next + len + 10 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 11 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 11);
       memcpy(group_tokens_next, "VARIANCE(", 9); group_tokens_next += 9;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
     }
     if(flags & SUM_STD_DEV) {
-      if(group_tokens_next + len + 9 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      if(group_tokens_next + len + 10 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 10);
       memcpy(group_tokens_next, "STD_DEV(", 8); group_tokens_next += 8;
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
@@ -232,11 +231,9 @@ void summarizer::process_token(const char* token)
   else {
     const uint32_t& flags = *cfi;
     if(flags & 1) {
-      for(const char* p = token; 1; ++p) {
-        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-        *group_tokens_next++ = *p;
-        if(!*p) break;
-      }
+      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = '\0';
     }
     else if(flags) {
       char* next; *vi = strtod(token, &next);
@@ -249,11 +246,11 @@ void summarizer::process_token(const char* token)
 
 void summarizer::process_token(double token)
 {
-  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   const uint32_t& flags = *cfi;
   if(flags & 1) {
-    if(group_tokens_next + 32 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    if(group_tokens_next + 31 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, 32);
     group_tokens_next += dtostr(token, group_tokens_next) + 1;
   }
   else if(flags) { *vi++ = token; }
@@ -264,8 +261,9 @@ void summarizer::process_line()
 {
   if(first_line) {
     for(char* p = group_tokens; p < group_tokens_next; ++p) {
-      out->process_token(p);
-      while(*p) ++p;
+      size_t len = strlen(p);
+      out->process_token(p, len);
+      p += len;
     }
     out->process_line();
     first_line = 0;
@@ -332,7 +330,7 @@ void summarizer::process_stream()
   vector<summarizer_data_t*>::const_iterator dsi = data_storage.begin();
   summarizer_data_t* d = (dsi == data_storage.end()) ? 0 : *dsi;
   while(g && d) {
-    while(*g != '\x03') { out->process_token(g); while(*g) ++g; ++g; }
+    while(*g != '\x03') { size_t len = strlen(g); out->process_token(g, len); g += len + 1; }
     ++g;
     if(*g == '\x04') { delete[] *gsi; ++gsi; g = (gsi == group_storage.end()) ? 0 : *gsi; }
 
@@ -407,7 +405,7 @@ void differ::init(pass& out, const char* base_key, const char* comp_key, const c
   blank = 0;
 }
 
-void differ::process_token(const char* token)
+void differ::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!out) throw runtime_error("differ has no out");
@@ -418,7 +416,7 @@ void differ::process_token(const char* token)
     if(column == base_column) { char* next = 0; base_value = strtod(token, &next); if(next == token || *next) blank = 1; }
     else if(column == comp_column) { char* next = 0; comp_value = strtod(token, &next); if(next == token || *next) blank = 1; }
   }
-  out->process_token(token);
+  out->process_token(token, len);
 
   ++column;
 }
@@ -429,15 +427,15 @@ void differ::process_line()
     if(!out) throw runtime_error("differ has no out");
     if(base_column < 0) throw runtime_error("differ couldn't find the base column");
     if(comp_column < 0) throw runtime_error("differ couldn't find the comp column");
-    out->process_token(keyword.c_str());
+    out->process_token(keyword.c_str(), keyword.size());
     first_row = 0;
   }
   else {
-    if(blank) out->process_token("");
+    if(blank) out->process_token("", 0);
     else {
       char buf[32];
-      sprintf(buf, "%.6g", comp_value - base_value);
-      out->process_token(buf);
+      int len = sprintf(buf, "%.6g", comp_value - base_value);
+      out->process_token(buf, len);
     }
   }
   out->process_line();
@@ -488,11 +486,10 @@ base_converter& base_converter::add_conv(const char* regex, int from, int to)
   return *this;
 }
 
-void base_converter::process_token(const char* token)
+void base_converter::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!out) throw runtime_error("base_converter has no out");
-    size_t len = strlen(token);
     conv_t c; c.from = -1; c.to = 0;
     for(vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
       int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
@@ -500,9 +497,9 @@ void base_converter::process_token(const char* token)
       else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("base_converter match error");
     }
     conv.push_back(c);
-    out->process_token(token);
+    out->process_token(token, len);
   }
-  else if(conv[column].from < 0) out->process_token(token);
+  else if(conv[column].from < 0) out->process_token(token, len);
   else {
     char* next = 0;
     long int ivalue = 0;
@@ -510,12 +507,12 @@ void base_converter::process_token(const char* token)
     if(conv[column].from == 10) { dvalue = strtod(token, &next); ivalue = (long int)dvalue; }
     else { ivalue = strtol(token, &next, conv[column].from); dvalue = ivalue; }
 
-    if(next == token) out->process_token(token);
+    if(next == token) out->process_token(token, len);
     else {
       if(conv[column].to == 10) { out->process_token(dvalue); }
-      else if(conv[column].to == 8) { char buf[256]; sprintf(buf, "%#lo", ivalue); out->process_token(buf); }
-      else if(conv[column].to == 16) { char buf[256]; sprintf(buf, "%#lx", ivalue); out->process_token(buf); }
-      else out->process_token(token);
+      else if(conv[column].to == 8) { char buf[256]; int len = sprintf(buf, "%#lo", ivalue); out->process_token(buf, len); }
+      else if(conv[column].to == 16) { char buf[256]; int len = sprintf(buf, "%#lx", ivalue); out->process_token(buf, len); }
+      else out->process_token(token, len);
     }
   }
 
@@ -524,10 +521,10 @@ void base_converter::process_token(const char* token)
 
 void base_converter::process_token(double token)
 {
-  if(first_row) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
-  if(conv[column].to == 8) { char buf[256]; sprintf(buf, "%#lo", (long int)token); out->process_token(buf); }
-  else if(conv[column].to == 16) { char buf[256]; sprintf(buf, "%#lx", (long int)token); out->process_token(buf); }
+  if(conv[column].to == 8) { char buf[256]; int len = sprintf(buf, "%#lo", (long int)token); out->process_token(buf, len); }
+  else if(conv[column].to == 16) { char buf[256]; int len = sprintf(buf, "%#lx", (long int)token); out->process_token(buf, len); }
   else out->process_token(token);
 
   ++column;
@@ -614,12 +611,11 @@ variance_analyzer& variance_analyzer::add_exception(const char* regex)
   return *this;
 }
 
-void variance_analyzer::process_token(const char* token)
+void variance_analyzer::process_token(const char* token, size_t len)
 {
   if(first_line) {
     if(!out) throw runtime_error("variance_analyzer has no out");
     char type = 0;
-    size_t len = strlen(token);
     for(vector<pcre*>::iterator j = group_regexes.begin(); j != group_regexes.end(); ++j) {
       int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
       if(rc >= 0) { type = 1; break; }
@@ -646,11 +642,9 @@ void variance_analyzer::process_token(const char* token)
     if(cti == column_type.end()) return;
 
     if(*cti == 1) {
-      for(const char* p = token; 1; ++p) {
-        if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-        *group_tokens_next++ = *p;
-        if(!*p) break;
-      }
+      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+      memcpy(group_tokens_next, token, len); group_tokens_next += len;
+      *group_tokens_next++ = '\0';
     }
     else if(*cti == 2) {
       char* next; *vi = strtod(token, &next);
@@ -663,12 +657,12 @@ void variance_analyzer::process_token(const char* token)
 
 void variance_analyzer::process_token(double token)
 {
-  if(first_line) { char buf[32]; dtostr(token, buf); process_token(buf); return; }
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   if(cti == column_type.end()) return;
 
   if(*cti == 1) {
-    if(group_tokens_next + 32 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+    if(group_tokens_next + 31 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, 32);
     group_tokens_next += dtostr(token, group_tokens_next) + 1;
   }
   else if(*cti == 2) { *vi++ = token; }
@@ -724,24 +718,24 @@ void variance_analyzer::process_stream()
 
   if(group_storage_next) *group_storage_next++ = '\x04';
 
-  out->process_token("keyword");
+  out->process_token("keyword", 7);
   vector<char*>::const_iterator gsi = group_storage.begin();
   char* gsp = gsi == group_storage.end() ? 0 : *gsi;
   while(gsp) {
     group_tokens_next = group_tokens + 8;
     for(; 1; ++gsp) {
       if(!*gsp) { *group_tokens_next++ = ' '; }
-      else if(*gsp == '\x03') { --group_tokens_next; *group_tokens_next++ = ')'; *group_tokens_next++ = '\0'; break; }
+      else if(*gsp == '\x03') { --group_tokens_next; *group_tokens_next++ = ')'; *group_tokens_next = '\0'; break; }
       else { *group_tokens_next++ = *gsp; }
     }
-    memcpy(group_tokens + 4, "AVG(", 4); out->process_token(group_tokens + 4);
-    memcpy(group_tokens, "STD_DEV(", 8); out->process_token(group_tokens);
+    memcpy(group_tokens + 4, "AVG(", 4); out->process_token(group_tokens + 4, group_tokens_next - group_tokens - 4);
+    memcpy(group_tokens, "STD_DEV(", 8); out->process_token(group_tokens, group_tokens_next - group_tokens);
     if(*++gsp == '\x04') { ++gsi; gsp = gsi == group_storage.end() ? 0 : *gsi; }
   }
-  out->process_token("AVG");
-  out->process_token("STD_DEV");
-  out->process_token("f");
-  out->process_token("p");
+  out->process_token("AVG", 3);
+  out->process_token("STD_DEV", 7);
+  out->process_token("f", 1);
+  out->process_token("p", 1);
   out->process_line();
 
   const size_t max_groups = groups.size();
@@ -750,7 +744,7 @@ void variance_analyzer::process_stream()
 
   size_t di = 0;
   for(vector<string>::const_iterator dki = data_keywords.begin(); dki != data_keywords.end(); ++dki, ++di) {
-    out->process_token((*dki).c_str());
+    out->process_token((*dki).c_str(), (*dki).size());
 
     size_t num_groups = max_groups;
     int total_count = 0;
