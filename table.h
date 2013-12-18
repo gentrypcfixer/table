@@ -708,6 +708,34 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// tabular_writer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+class tabular_writer : public table::pass {
+  std::streambuf* out;
+  int line;
+  size_t column;
+  std::vector<size_t> max_width;
+  std::vector<char*> data;
+  char* next;
+  char* end;
+
+  void process_data();
+
+public:
+  tabular_writer();
+  tabular_writer(std::streambuf* out);
+  tabular_writer& init();
+  tabular_writer& init(std::streambuf* out);
+  tabular_writer& set_out(std::streambuf* out);
+
+  void process_token(const char* token, size_t len);
+  void process_line();
+  void process_stream();
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 

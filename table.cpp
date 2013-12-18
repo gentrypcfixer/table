@@ -1725,6 +1725,132 @@ void combiner::process_stream()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// tabular_writer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+void tabular_writer::process_data()
+{
+  if(!next) return;
+
+  *next++ = '\03';
+
+  size_t c = 0;
+  char buf[32];
+  for(; c < max_width.size(); ++c) {
+    int len = sprintf(buf, "c%zu", c);
+    size_t spaces = 1 + max_width[c] - len;
+
+    for(size_t i = 0; i < spaces; ++i)
+      out->sputc(' ');
+
+    out->sputn(buf, len);
+  }
+  out->sputc('\n');
+
+  c = 0;
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
+    next = *i;
+    while(*next != '\03') {
+      size_t len = strlen(next);
+      size_t spaces = 1 + max_width[c] - len;
+
+      for(size_t i = 0; i < spaces; ++i)
+        out->sputc(' ');
+
+      out->sputn(next, len);
+      next += len + 1;
+
+      if(++c >= max_width.size()) {
+        out->sputc('\n');
+        c = 0;
+      }
+    }
+    delete[] *i;
+  }
+  max_width.clear();
+  data.clear();
+}
+
+tabular_writer::tabular_writer() { init(); }
+tabular_writer::tabular_writer(streambuf* out) { init(out); }
+
+tabular_writer& tabular_writer::init()
+{
+  this->out = 0;
+  line = 0;
+  column = 0;
+  max_width.clear();
+  for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
+  data.clear();
+  next = 0;
+  end = 0;
+  return *this;
+}
+
+tabular_writer& tabular_writer::init(streambuf* out) { init(); return set_out(out); }
+tabular_writer& tabular_writer::set_out(streambuf* out) { if(!out) throw runtime_error("tabular_writer::null out"); this->out = out; return *this; }
+
+void tabular_writer::process_token(const char* token, size_t len)
+{
+  if(!line) {
+    if(!next || len + 20 > size_t(end - data.back())) {
+      size_t cap = 256 * 1024;
+      if(cap < len + 20) cap = len + 20;
+      data.push_back(new char[cap]);
+      next = data.back();
+      end = data.back() + cap;
+    }
+    next += sprintf(next, "c%zu", column);
+    max_width.push_back(next - data.back());
+    next += sprintf(next, "=%s\n", token);
+    out->sputn(data.back(), next - data.back());
+    next = data.back();
+  }
+  else if(line < 20) {
+    if(line && max_width[column] < len) max_width[column] = len;
+    if(!next || len + 2 > size_t(end - next)) {
+      if(next) *next++ = '\03';
+      size_t cap = 256 * 1024;
+      if(cap < len + 2) cap = len + 2;
+      data.push_back(new char[cap]);
+      next = data.back();
+      end = data.back() + cap;
+    }
+    memcpy(next, token, len + 1); next += len + 1;
+  }
+  else {
+    if(line && max_width[column] < len) max_width[column] = len;
+    size_t spaces = 1 + max_width[column] - len;
+
+    for(size_t i = 0; i < spaces; ++i)
+      out->sputc(' ');
+
+    out->sputn(token, len);
+  }
+
+  ++column;
+}
+
+void tabular_writer::process_line()
+{
+  if(!out) throw runtime_error("tabular_writer has no out");
+
+  if(!line) out->sputc('\n');
+  else if(line == 19) { process_data(); }
+  else if(line > 19) out->sputc('\n');
+
+  ++line;
+  column = 0;
+}
+
+
+void tabular_writer::process_stream()
+{
+  if(line <= 19) { process_data(); }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
