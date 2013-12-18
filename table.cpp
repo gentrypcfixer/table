@@ -64,7 +64,8 @@ static void strreverse(char* begin, char* end)
 int dtostr(double value, char* str, int prec)
 {
   if(isnan(value)) { str[0] = '\0'; return 0; }
-  if(value > (double)(0x7FFFFFFF)) { return sprintf(str, "%.6g", value); }
+  const double thres = (double)(0x7FFFFFFF);
+  if(value > thres || value < -thres) { return sprintf(str, "%.6g", value); }
 
   // precision of >= 10 can lead to overflow errors
   if (prec < 0) { prec = 0; }
@@ -1659,7 +1660,7 @@ void combiner::process_line()
     for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) {
       for(size_t j = 0; j < tokens.size(); ++j) {
         int ovector[30]; int rc = pcre_exec((*i).first, 0, tokens[j].c_str(), tokens[j].size(), 0, 0, ovector, 30);
-        if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error"); }
+        if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("combiner match error"); }
         else {
           char* next = buf;
           if(!rc) rc = 10;

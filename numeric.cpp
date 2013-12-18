@@ -339,13 +339,10 @@ void summarizer::process_stream()
 
       if((*cfi) & SUM_MISSING) { out->process_token((*d).missing); }
       if((*cfi) & SUM_COUNT) { out->process_token((*d).count); }
-      if((*cfi) & SUM_SUM) { out->process_token((*d).sum); }
-      if((*cfi) & SUM_MIN) { out->process_token((*d).min); }
-      if((*cfi) & SUM_MAX) { out->process_token((*d).max); }
-      if((*cfi) & SUM_AVG) {
-        if(!(*d).count) { out->process_token(numeric_limits<double>::quiet_NaN()); }
-        else { out->process_token((*d).sum / (*d).count); }
-      }
+      if((*cfi) & SUM_SUM) { out->process_token((*d).count ? (*d).sum : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_MIN) { out->process_token((*d).count ? (*d).min : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_MAX) { out->process_token((*d).count ? (*d).max : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_AVG) { out->process_token((*d).count ? ((*d).sum / (*d).count) : numeric_limits<double>::quiet_NaN()); }
       if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
         if((*d).count > 1) {
           double v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
