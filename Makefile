@@ -18,10 +18,10 @@ ARFLAGS = rcs
 
 .PHONY : all clean
 
-all : table_stack table_test libtable.a
+all : table_stack table_test table_reg_test libtable.a
 
 clean :
-	@rm -f *.o table_stack table_split table_test libtable.a
+	@rm -f *.o table_stack table_split table_test table_reg_test libtable.a
 
 % : %.o
 	$(CPP) $+ $(LDFLAGS) -o $@
@@ -39,10 +39,12 @@ numeric.o : table.h numeric_imp.h
 table_stack.o : table.h numeric_imp.h
 table_split.o : table.h numeric_imp.h
 table_test.o : table.h numeric_imp.h
+table_reg_test.o : table.h numeric_imp.h
 
 libtable.a : numeric.o
 
 table_stack : libtable.a
 table_split : libtable.a
 table_test : libtable.a
+table_reg_test : libtable.a
 

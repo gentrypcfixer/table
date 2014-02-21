@@ -2,10 +2,9 @@
 *.csv
 *.o
 *.a
-table_cat_date
-table_cat_die
 table_stack
 table_test
+table_reg_test
 errors.err
 diff
 ci
