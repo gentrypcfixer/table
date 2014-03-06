@@ -51,14 +51,14 @@ table_reg_test.o : table.h numeric_imp.h
 table_reg_test_debug.o : table.h numeric_imp.h
 
 libtable.a : numeric.o
-libtable_debug.a : numeric.o
+libtable_debug.a : numeric_debug.o
 
 table_stack : libtable.a
-table_stack_debug : libtable.a
+table_stack_debug : libtable_debug.a
 table_split : libtable.a
-table_split_debug : libtable.a
+table_split_debug : libtable_debug.a
 table_test : libtable.a
-table_test_debug : libtable.a
+table_test_debug : libtable_debug.a
 table_reg_test : libtable.a
-table_reg_test_debug : libtable.a
+table_reg_test_debug : libtable_debug.a
 
