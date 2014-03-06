@@ -27,9 +27,6 @@ clean :
 lib%.a : %.o
 	$(AR) $(ARFLAGS) $@ $+
 
-lib%_debug.a : %.o
-	$(AR) $(ARFLAGS) $@ $+
-
 %.o : %.cpp
 	$(CXX) -c $(CXXFLAGS) -O2 $< -o $@
 
