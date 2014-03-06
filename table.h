@@ -26,6 +26,7 @@ int dtostr(double value, char* str, int prec = 6);
 
 struct cstr_less {
   bool operator()(char* const& lhs, char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
+  bool operator()(const char* const& lhs, const char* const& rhs) const { return 0 > strcmp(lhs, rhs); }
 };
 
 struct multi_cstr_less { //for multiple null terminated strings terminated by a END OF TEXT (number 3)
