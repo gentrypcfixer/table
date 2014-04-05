@@ -105,75 +105,6 @@ int dtostr(double value, char* str, int prec)
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// cstring_queue
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-vector<cstring_queue::block_t> cstring_queue::free_blocks;
-
-vector<cstring_queue::block_t>::iterator cstring_queue::add_block(size_t len)
-{
-  vector<block_t>::iterator fbi = free_blocks.begin();
-  while(fbi != free_blocks.end() && (*fbi).data->cap <= len) ++fbi;
-
-  vector<block_t>::iterator i;
-  if(fbi != free_blocks.end()) {
-    if(!data->blocks.size()) data->next_read = (*fbi).data->buf;
-    i = data->blocks.insert(data->blocks.end(), *fbi);
-    free_blocks.erase(fbi);
-    //cout << "found_block " << len << ' ' << (*i).data->cap << endl;
-  }
-  else {
-    size_t cap = default_block_cap;
-    if(len >= cap) cap = len + 1;
-    block_t b(cap);
-    if(!data->blocks.size()) data->next_read = b.data->buf;
-    i = data->blocks.insert(data->blocks.end(), b);
-    //cout << "new_block " << len << ' ' << (*i).data->cap << endl;
-  }
-
-  (*i).data->next_write = (*i).data->buf;
-
-  return i;
-}
-
-void cstring_queue::copy()
-{
-  if(data->rc <= 1) { cow = 0; return; }
-
-  cstring_queue_data_t* old = data;
-  data = new cstring_queue_data_t;
-  data->rc = 1;
-  for(vector<block_t>::const_iterator i = old->blocks.begin(); i != old->blocks.end(); ++i) {
-    block_t t((*i).data->cap);
-    memcpy(t.data->buf, (*i).data->buf, (*i).data->next_write - (*i).data->buf);
-    t.data->last_token = (*i).data->last_token;
-    t.data->next_write = (*i).data->next_write;
-    data->blocks.push_back(t);
-  }
-  data->next_read = old->next_read;
-  cow = 0;
-}
-
-void cstring_queue::clear()
-{
-  if(data->rc <= 1) {
-    for(vector<block_t>::iterator i = data->blocks.begin(); i != data->blocks.end(); ++i)
-      free_blocks.push_back(*i);
-    data->blocks.clear();
-    data->next_read = 0;
-  }
-  else {
-    cstring_queue_data_t* old = data;
-    --old->rc;
-    data = new cstring_queue_data_t;
-    data->rc = 1;
-    data->next_read = 0;
-  }
-  cow = 0;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
 // pass
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -581,9 +512,58 @@ void ordered_tee::process_stream()
 // stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+void stacker::push(const char* token, size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next)
+{
+  if(!next || len + 2 > size_t(tokens[index].second - next)) {
+    if(next) { *next++ = '\x03'; ++index; }
+    if(index < tokens.size()) {
+      size_t cap = size_t(tokens[index].second - next);
+      if(cap < len + 2) {
+        cap = len + 2;
+        delete[] tokens[index].first;
+        tokens[index].first = new char[cap];
+        tokens[index].second = tokens[index].first + cap;
+      }
+    }
+    else {
+      size_t cap = 256 * 1024;
+      if(cap < len + 2) cap = len + 2;
+      char* p = new char[cap];
+      tokens.push_back(pair<char*, char*>(p, p + cap));
+    }
+    next = tokens[index].first;
+  }
+  memcpy(next, token, len + 1);
+  next += len + 1;
+}
+
+void stacker::process_out_line(const char* token, size_t len)
+{
+  vector<pair<char*, char*> >::iterator lti = leave_tokens.begin();
+  if(lti != leave_tokens.end()) {
+    char* ltp = (*lti).first;
+    while(1) {
+      size_t len = strlen(ltp);
+      out->process_token(ltp, len);
+      ltp += len + 1;
+      if(*ltp == '\x03') ltp = (*++lti).first;
+      else if(*ltp == '\x04') break;
+    }
+  }
+  out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+  out->process_token(token, len);
+  out->process_line();
+}
+
 stacker::stacker(stack_action_e default_action) { init(default_action); }
 stacker::stacker(pass& out, stack_action_e default_action) { init(out, default_action); }
-stacker::~stacker() {}
+
+stacker::~stacker()
+{
+  for(vector<regex_stack_action_t>::iterator i = regex_actions.begin(); i != regex_actions.end(); ++i) pcre_free((*i).regex);
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
+  for(vector<pair<char*, char*> >::iterator i = stack_tokens.begin(); i != stack_tokens.end(); ++i) delete[] (*i).first;
+}
 
 stacker& stacker::re_init()
 {
@@ -594,8 +574,14 @@ stacker& stacker::re_init()
 
   column = 0;
   stack_column = 0;
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
   leave_tokens.clear();
+  leave_tokens_index = 0;
+  leave_tokens_next = 0;
+  for(vector<pair<char*, char*> >::iterator i = stack_tokens.begin(); i != stack_tokens.end(); ++i) delete[] (*i).first;
   stack_tokens.clear();
+  stack_tokens_index = 0;
+  stack_tokens_next = 0;
   return *this;
 }
 
@@ -604,6 +590,7 @@ stacker& stacker::init(stack_action_e default_action)
   this->out = 0;
   this->default_action = default_action;
   keyword_actions.clear();
+  for(vector<regex_stack_action_t>::iterator i = regex_actions.begin(); i != regex_actions.end(); ++i) pcre_free((*i).regex);
   regex_actions.clear();
   re_init();
   return *this;
@@ -641,31 +628,34 @@ void stacker::process_token(const char* token, size_t len)
       }
     }
     actions.push_back(action);
-    if(action == ST_LEAVE) { leave_tokens.push(token); last_leave = column; out->process_token(token, len); }
+    if(action == ST_LEAVE) { last_leave = column; out->process_token(token, len); }
     else if(action == ST_STACK) stack_keys.push_back(token);
   }
   else {
     if(column >= actions.size()) throw runtime_error("too many columns");
     else if(actions[column] == ST_LEAVE) {
-      leave_tokens.push(token);
+      push(token, len, leave_tokens, leave_tokens_index, leave_tokens_next);
       if(column == last_leave) {
-        for(stack_column = 0; !stack_tokens.empty(); ++stack_column) {
-          for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) { out->process_token(*i, strlen(*i)); }
-          out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
-          out->process_token(stack_tokens.front(), strlen(stack_tokens.front()));
-          stack_tokens.pop();
-          out->process_line();
+        *leave_tokens_next++ = '\x04';
+        if(stack_tokens_next) {
+          *stack_tokens_next++ = '\x04';
+          vector<pair<char*, char*> >::iterator sti = stack_tokens.begin();
+          char* stp = (*sti).first;
+          stack_column = 0;
+          while(1) {
+            size_t len = strlen(stp);
+            process_out_line(stp, len);
+            stp += len + 1;
+            ++stack_column;
+            if(*stp == '\x03') (*++sti).first;
+            else if(*stp == '\x04') break;
+          }
         }
       }
     }
     else if(actions[column] == ST_STACK) { 
-      if(column < last_leave) stack_tokens.push(token);
-      else {
-        for(cstring_queue::const_iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) out->process_token(*i, strlen(*i));
-        out->process_token(stack_keys[stack_column++].c_str(), stack_keys[stack_column++].size());
-        out->process_token(token, len);
-        out->process_line();
-      }
+      if(column < last_leave) { push(token, len, stack_tokens, stack_tokens_index, stack_tokens_next); }
+      else { process_out_line(token, len); ++stack_column; }
     }
   }
 
@@ -683,12 +673,21 @@ void stacker::process_line()
   }
   column = 0;
   stack_column = 0;
-  leave_tokens.clear();
+  leave_tokens_index = 0;
+  leave_tokens_next = 0;
+  stack_tokens_index = 0;
+  stack_tokens_next = 0;
 }
 
 void stacker::process_stream()
 {
   if(!out) throw runtime_error("stacker has no out");
+
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
+  leave_tokens.clear();
+  for(vector<pair<char*, char*> >::iterator i = stack_tokens.begin(); i != stack_tokens.end(); ++i) delete[] (*i).first;
+  stack_tokens.clear();
+
   out->process_stream();
 }
 
@@ -1897,6 +1896,8 @@ csv_writer& csv_writer::set_out(streambuf* out) { if(!out) throw runtime_error("
 
 void csv_writer::process_stream()
 {
+  if(line && column) throw runtime_error("csv_writer saw process_stream called after process_token");
+
 #ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
   cerr << "csv_writer saw dimensions of " << num_columns << " by " << line << endl;
 #endif
@@ -1923,6 +1924,8 @@ csv_file_writer& csv_file_writer::set_out(const char* filename)
 csv_file_writer::~csv_file_writer() { delete out; }
 
 void csv_file_writer::process_stream() {
+  if(line && column) throw runtime_error("csv_file_writer saw process_stream called after process_token");
+
 #ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
   cerr << "csv_file_writer saw dimensions of " << num_columns << " by " << line << endl;
 #endif

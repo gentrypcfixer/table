@@ -2,6 +2,7 @@
 *.csv
 *.o
 *.a
+*.exe
 table_stack
 table_stack_debug
 table_test

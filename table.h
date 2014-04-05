@@ -69,158 +69,6 @@ struct multi_cstr_equal_to { //for multiple null terminated strings terminated b
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// cstring_queue
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-class cstring_queue
-{
-  struct block_t {
-    struct block_data_t {
-      size_t rc;
-      size_t cap;
-      char* buf;
-      char* last_token;
-      char* next_write;
-    } *data;
-
-    block_t() : data(0) {}
-    block_t(size_t cap) : data(0) { init(cap); }
-    block_t(const block_t& other) { data = other.data; if(data) ++data->rc; }
-    ~block_t() { if(data && !(--data->rc)) { delete[] data->buf; delete data; } }
-
-    block_t& operator=(const block_t& other) {
-      if(data && !(--data->rc)) { delete[] data->buf; delete data; }
-      data = other.data;
-      if(data) ++data->rc;
-      return *this;
-    }
-
-    void init(size_t cap) {
-      if(data && !(--data->rc)) { delete[] data->buf; delete data; }
-      data = new block_data_t;
-      data->rc = 1;
-      data->cap = cap;
-      data->buf = new char[cap];
-    }
-  };
-
-  static std::vector<block_t> free_blocks;
-  struct cstring_queue_data_t {
-    size_t rc;
-    std::vector<block_t> blocks;
-    char* next_read;
-  }* data;
-  size_t default_block_cap;
-  bool cow;
-
-  std::vector<block_t>::iterator add_block(size_t len);
-  void copy();
-
-public:
-  class const_iterator
-  {
-    friend class cstring_queue;
-    std::vector<block_t>::const_iterator bi;
-    std::vector<block_t>::const_iterator bie;
-    char* d;
-
-    const_iterator(std::vector<block_t>::const_iterator bi, std::vector<block_t>::const_iterator bie) : bi(bi), bie(bie), d(bi != bie ? (*bi).data->buf : 0) {} //begin
-    const_iterator() : d(0) {} //end
-
-  public:
-    const char* operator*() { return d; }
-    bool operator==(const const_iterator& other) { return d == other.d; }
-    bool operator!=(const const_iterator& other) { return d != other.d; };
-
-    const_iterator& operator++() {
-      if(!d) return *this;
-
-      if(d == (*bi).data->last_token) {
-        if(++bi == bie) d = 0;
-        else d = (*bi).data->buf;
-      }
-      else {
-        while(*d != '\0') ++d;
-        ++d;
-      }
-      return *this;
-    }
-  };
-
-  cstring_queue() { data = new cstring_queue_data_t; data->rc = 1; data->next_read = 0; default_block_cap = 8 * 1024; cow = 0; }
-  cstring_queue(const cstring_queue& other) { data = other.data; ++data->rc; default_block_cap = other.default_block_cap; cow = 1; }
-  cstring_queue& operator=(const cstring_queue& other) { if(data && !(--data->rc)) { clear(); delete data; } data = other.data; ++data->rc; default_block_cap = other.default_block_cap; cow = 1; return *this; }
-  ~cstring_queue() { if(data && !(--data->rc)) { clear(); delete data; } }
-
-  const_iterator begin() const { return data ? const_iterator(data->blocks.begin(), data->blocks.end()) : const_iterator(); }
-  const_iterator end() const { return const_iterator(); };
-  bool empty() const { return !data->next_read; }
-  const char* front() const { return data->next_read; }
-  bool operator<(const cstring_queue& other) const {
-    if(data == other.data) return false;
-    std::vector<block_t>::iterator i = data->blocks.begin(), j = other.data->blocks.begin();
-    for(; i != data->blocks.end() && j != other.data->blocks.end(); ++i, ++j) {
-      const size_t len = (*i).data->next_write - (*i).data->buf;
-      const size_t olen = (*j).data->next_write - (*j).data->buf;
-      const size_t clen = len < olen ? len : olen;
-      int ret = memcmp((*i).data->buf, (*j).data->buf, clen);
-      if(ret < 0) return true;
-      else if(ret > 0) return false;
-      else {
-        if(len < olen) return true;
-        else if(len > olen) return false;
-      }
-    }
-    if(j != other.data->blocks.end()) return true;
-    return false;
-  }
-  bool operator==(const cstring_queue& other) const {
-    if(data == other.data) return true;
-    std::vector<block_t>::iterator i = data->blocks.begin(), j = other.data->blocks.begin();
-    for(; i != data->blocks.end() && j != other.data->blocks.end(); ++i, ++j) {
-      size_t len = (*i).data->next_write - (*i).data->buf;
-      size_t olen = (*j).data->next_write - (*j).data->buf;
-      if(len != olen || memcmp((*i).data->buf, (*j).data->buf, len)) return false;
-    }
-    return true;
-  }
-
-  void set_default_cap(size_t cap) { default_block_cap = cap; }
-  void clear();
-  void push(const char* c) {
-    if(cow) copy();
-    const size_t len = strlen(c);
-    std::vector<block_t>::iterator i = data->blocks.begin();
-    if(i == data->blocks.end()) i = add_block(len);
-    else {
-      std::advance(i, data->blocks.size() - 1);
-      const size_t rem = (*i).data->cap - ((*i).data->next_write - (*i).data->buf);
-      if(rem <= len) i = add_block(len);
-    }
-    (*i).data->last_token = (*i).data->next_write;
-    memcpy((*i).data->next_write, c, len + 1);
-    (*i).data->next_write += len + 1;
-  }
-  void pop() {
-    if(cow) copy();
-    std::vector<block_t>::iterator i = data->blocks.begin();
-    if(i == data->blocks.end()) return;
-    if(data->next_read != (*i).data->last_token) {
-      while(*data->next_read != '\0') ++data->next_read;
-      ++data->next_read;
-    }
-    else {
-      free_blocks.insert(free_blocks.end(), *i);
-      i = data->blocks.erase(i);
-      if(i != data->blocks.end()) data->next_read = (*i).data->buf;
-      else { data->next_read = 0; }
-    }
-  }
-};
-
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
 // pass
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -357,16 +205,13 @@ enum stack_action_e
   ST_REMOVE
 };
 
-struct regex_stack_action_t
-{
-  pcre* regex;
-  stack_action_e action;
-
-  regex_stack_action_t() : regex(0) {}
-  ~regex_stack_action_t() { pcre_free(regex); }
-};
-
 class stacker : public pass {
+  struct regex_stack_action_t
+  {
+    pcre* regex;
+    stack_action_e action;
+  };
+
   pass* out;
   stack_action_e default_action;
   std::map<std::string, stack_action_e> keyword_actions;
@@ -381,8 +226,15 @@ class stacker : public pass {
   //current line information
   size_t column;
   size_t stack_column;
-  cstring_queue leave_tokens;
-  cstring_queue stack_tokens;
+  std::vector<std::pair<char*, char*> > leave_tokens;
+  size_t leave_tokens_index;
+  char* leave_tokens_next;
+  std::vector<std::pair<char*, char*> > stack_tokens;
+  size_t stack_tokens_index;
+  char* stack_tokens_next;
+
+  void push(const char* token, size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next);
+  void process_out_line(const char* token, size_t len);
 
 public:
   stacker(stack_action_e default_action);

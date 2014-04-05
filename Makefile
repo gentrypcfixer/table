@@ -4,11 +4,11 @@ LIB_TYPE = SHARED
 
 CXX = /usr/bin/g++
 CXXFLAGS_STATIC = -I$(PCRE_DIR)
-CXXFLAGS = -m32 -Wall $(CXXFLAGS_$(LIB_TYPE))
+CXXFLAGS = -Wall $(CXXFLAGS_$(LIB_TYPE))
 
 LDFLAGS_SHARED = -lpcre -lpthread
 LDFLAGS_STATIC = -static -L$(PCRE_DIR)/.libs -lpcre -lpthread
-LDFLAGS = -m32 $(LDFLAGS_$(LIB_TYPE))
+LDFLAGS = $(LDFLAGS_$(LIB_TYPE))
 
 AR = ar
 ARFLAGS = rcs
@@ -18,7 +18,7 @@ ARFLAGS = rcs
 all : libtable.a libtable_debug.a table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
 
 clean :
-	@rm -f *.o lib*.a table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
+	@rm -f *.o lib*.a *.exe table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
 
 % : %.o
 	$(CXX) $+ $(LDFLAGS) -o $@
