@@ -43,7 +43,13 @@ class simple_validater : public pass {
   size_t line;
 
   public:
-  simple_validater(const char** expected) : expected(expected), column(0), line(0) {}
+  simple_validater(const char** expected) { init(expected); }
+
+  void init(const char** expected) {
+    this->expected = expected;
+    column = 0;
+    line = 0;
+  }
 
   void process_token(const char* token, size_t len) {
     if(!*expected) {
@@ -98,9 +104,9 @@ const char* stacker_expect[] = {
 };
 
 const char* stacker_expect2[] = {
-  "L0_C0", "L0,C1", "keyword", "data",  0,
+  "L0_C0", "L0_C1", "keyword", "data",  0,
   "L1_C0", "L1_C1", "L0_C3",   "L1_C3", 0,
-  "L2_C0", "L2_C1", "L2_C3",   "L2_C3", 0,
+  "L2_C0", "L2_C1", "L0_C3",   "L2_C3", 0,
   0
 };
 
@@ -116,6 +122,8 @@ int validate_stacker()
     st.add_action(0, "L0_C3", ST_REMOVE);
 
     generate_data(st, 4, 2);
+
+    v.init(stacker_expect2);
 
     st.init(v, ST_LEAVE);
     st.add_action(0, "L0_C2", ST_REMOVE);
