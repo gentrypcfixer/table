@@ -30,7 +30,7 @@ install :
 	cd $(HOME)/lib && ln --symbolic --force libtable.a.$(TABLE_MAJOR) libtable.a
 	mkdir -p $(HOME)/include
 	sed -e 's/@TABLE_MAJOR@/$(TABLE_MAJOR)/' -e 's/@TABLE_MINOR@/$(TABLE_MINOR)/' < table.h > $(HOME)/include/table.h.$(TABLE_MAJOR).$(TABLE_MINOR)
-	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR).$(TABLE_MINOR).h table.h.$(TABLE_MAJOR)
+	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR).$(TABLE_MINOR) table.h.$(TABLE_MAJOR)
 	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR) table.h
 
 % : %.o
