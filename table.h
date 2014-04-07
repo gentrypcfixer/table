@@ -1,6 +1,9 @@
 #ifndef table_h_
 #define table_h_
 
+#define TABLE_MAJOR @TABLE_MAJOR@
+#define TABLE_MINOR @TABLE_MINOR@
+
 #include <string>
 #include <tr1/unordered_map>
 #include <map>
