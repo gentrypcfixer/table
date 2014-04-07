@@ -47,18 +47,18 @@ lib%.a : %.o
 	$(CXX) -c $(CXXFLAGS) -g $< -o $@
 
 
-table.o : table.h numeric_imp.h
-table_debug.o : table.h numeric_imp.h
-numeric.o : table.h numeric_imp.h
-numeric_debug.o : table.h numeric_imp.h
-table_stack.o : table.h numeric_imp.h
-table_stack_debug.o : table.h numeric_imp.h
-table_split.o : table.h numeric_imp.h
-table_split_debug.o : table.h numeric_imp.h
-table_test.o : table.h numeric_imp.h
-table_test_debug.o : table.h numeric_imp.h
-table_reg_test.o : table.h numeric_imp.h
-table_reg_test_debug.o : table.h numeric_imp.h
+table.o : table.h
+table_debug.o : table.h
+numeric.o : table.h
+numeric_debug.o : table.h
+table_stack.o : table.h
+table_stack_debug.o : table.h
+table_split.o : table.h
+table_split_debug.o : table.h
+table_test.o : table.h
+table_test_debug.o : table.h
+table_reg_test.o : table.h
+table_reg_test_debug.o : table.h
 
 libtable.a : numeric.o
 libtable_debug.a : numeric_debug.o
