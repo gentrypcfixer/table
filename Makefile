@@ -25,13 +25,13 @@ clean :
 
 install :
 	mkdir -p $(HOME)/lib
-	cp libtable.a $(HOME)/lib/libtable-$(TABLE_MAJOR).$(TABLE_MINOR).a
-	ln --symbolic --force $(HOME)/lib/libtable-$(TABLE_MAJOR).$(TABLE_MINOR).a $(HOME)/lib/libtable-$(TABLE_MAJOR).a
-	ln --symbolic --force $(HOME)/lib/libtable-$(TABLE_MAJOR).a $(HOME)/lib/libtable.a
+	cp libtable.a $(HOME)/lib/libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR)
+	cd $(HOME)/lib && ln --symbolic --force libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR) libtable.a.$(TABLE_MAJOR)
+	cd $(HOME)/lib && ln --symbolic --force libtable.a.$(TABLE_MAJOR) libtable.a
 	mkdir -p $(HOME)/include
-	sed -e 's/@TABLE_MAJOR@/$(TABLE_MAJOR)/' -e 's/@TABLE_MINOR@/$(TABLE_MINOR)/' < table.h > $(HOME)/include/table-$(TABLE_MAJOR).$(TABLE_MINOR).h
-	ln --symbolic --force $(HOME)/include/table-$(TABLE_MAJOR).$(TABLE_MINOR).h $(HOME)/include/table-$(TABLE_MAJOR).h
-	ln --symbolic --force $(HOME)/include/table-$(TABLE_MAJOR).h $(HOME)/include/table.h
+	sed -e 's/@TABLE_MAJOR@/$(TABLE_MAJOR)/' -e 's/@TABLE_MINOR@/$(TABLE_MINOR)/' < table.h > $(HOME)/include/table.h.$(TABLE_MAJOR).$(TABLE_MINOR)
+	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR).$(TABLE_MINOR).h table.h.$(TABLE_MAJOR)
+	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR) table.h
 
 % : %.o
 	$(CXX) $+ $(LDFLAGS) -o $@
