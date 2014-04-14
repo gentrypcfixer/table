@@ -1,17 +1,11 @@
 TABLE_MAJOR = 1
 TABLE_MINOR = 0
 
-PCRE_DIR = $(HOME)/source/pcre-8.33
-
-LIB_TYPE = SHARED
-
 CXX = /usr/bin/g++
-CXXFLAGS_STATIC = -I$(PCRE_DIR)
-CXXFLAGS = -Wall $(CXXFLAGS_$(LIB_TYPE))
 
-LDFLAGS_SHARED = -lpcre -lpthread
-LDFLAGS_STATIC = -static -L$(PCRE_DIR)/.libs -lpcre -lpthread
-LDFLAGS = $(LDFLAGS_$(LIB_TYPE))
+CXXFLAGS = -Wall -I$(HOME)/include
+
+LDFLAGS = -static -L$(HOME)/lib -lpcre -lpthread
 
 AR = ar
 ARFLAGS = rcs
