@@ -1,9 +1,16 @@
 TABLE_MAJOR = 1
 TABLE_MINOR = 0
 
-CXX = /usr/bin/g++
+CXX_$(OS) = /usr/bin/g++
+CXX_Windows_NT = /usr/bin/x86_64-w64-mingw32-g++.exe
+CXX = $(CXX_$(OS))
 
-CXXFLAGS = -Wall -I$(HOME)/include
+# used this command to configure pcre for mingw in cygwin
+#
+# CC=/usr/bin/x86_64-w64-mingw32-gcc.exe ./configure --disable-cpp --disable-shared --enable-newline-is-anycrlf --enable-utf8 --enable-unicode-properties
+
+CXXFLAGS_Windows_NT = -DPCRE_STATIC
+CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(HOME)/include
 
 LDFLAGS = -static -L$(HOME)/lib -lpcre -lpthread
 
