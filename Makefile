@@ -12,7 +12,8 @@ CXX = $(CXX_$(OS))
 CXXFLAGS_Windows_NT = -DPCRE_STATIC
 CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(HOME)/include
 
-LDFLAGS = -L$(HOME)/lib -lpcre -lpthread
+LDFLAGS_Windows_NT = -static
+LDFLAGS = -L$(HOME)/lib -lpcre -lpthread $(LDFLAGS_$(OS))
 
 AR = ar
 ARFLAGS = rcs
