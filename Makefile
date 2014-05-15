@@ -20,10 +20,10 @@ CXX = $(CXX_$(OS))
 # CC=/usr/bin/x86_64-w64-mingw32-gcc.exe ./configure --disable-cpp --disable-shared --enable-newline-is-anycrlf --enable-utf8 --enable-unicode-properties
 
 CXXFLAGS_Windows_NT = -DPCRE_STATIC
-CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(HOME)/include $(EXTRA_CXXFLAGS)
+CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(INCLUDE_DIR) $(EXTRA_CXXFLAGS)
 
 LDFLAGS_Windows_NT = -static
-LDFLAGS = -L$(HOME)/lib -lpcre -lpthread $(LDFLAGS_$(OS)) $(EXTRA_LDFLAGS)
+LDFLAGS = -L$(LIB_DIR) -lpcre -lpthread $(LDFLAGS_$(OS)) $(EXTRA_LDFLAGS)
 
 AR = ar
 ARFLAGS = rcs
