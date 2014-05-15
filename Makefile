@@ -1,3 +1,13 @@
+#for 32 bit on c1d
+#make INST_SET=i386 EXTRA_CXXFLAGS=-m32 EXTRA_LDFLAGS=-m32
+
+INST_SET = x86_64
+ABI_$(OS) = linux
+ABI_Windows_NT = win
+TRIPLET_DIR = /$(INST_SET)-$(ABI_$(OS))-gnu
+INCLUDE_DIR = $(HOME)/include$(TRIPLET_DIR)
+LIB_DIR = $(HOME)/lib$(TRIPLET_DIR)
+
 TABLE_MAJOR = 1
 TABLE_MINOR = 0
 
@@ -10,30 +20,32 @@ CXX = $(CXX_$(OS))
 # CC=/usr/bin/x86_64-w64-mingw32-gcc.exe ./configure --disable-cpp --disable-shared --enable-newline-is-anycrlf --enable-utf8 --enable-unicode-properties
 
 CXXFLAGS_Windows_NT = -DPCRE_STATIC
-CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(HOME)/include
+CXXFLAGS = $(CXXFLAGS_$(OS)) -Wall -I$(HOME)/include $(EXTRA_CXXFLAGS)
 
 LDFLAGS_Windows_NT = -static
-LDFLAGS = -L$(HOME)/lib -lpcre -lpthread $(LDFLAGS_$(OS))
+LDFLAGS = -L$(HOME)/lib -lpcre -lpthread $(LDFLAGS_$(OS)) $(EXTRA_LDFLAGS)
 
 AR = ar
 ARFLAGS = rcs
 
-.PHONY : all clean install
+.PHONY : all release debug clean install
 
-all : libtable.a libtable_debug.a table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
+all : release debug
+release : libtable.a table_stack table_test table_reg_test
+debug : libtable_debug.a table_stack_debug table_test_debug table_reg_test_debug
 
 clean :
 	@rm -f *.o lib*.a *.exe table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
 
 install :
-	mkdir -p $(HOME)/lib
-	cp libtable.a $(HOME)/lib/libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR)
-	cd $(HOME)/lib && ln --symbolic --force libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR) libtable.a.$(TABLE_MAJOR)
-	cd $(HOME)/lib && ln --symbolic --force libtable.a.$(TABLE_MAJOR) libtable.a
-	mkdir -p $(HOME)/include
-	sed -e 's/@TABLE_MAJOR@/$(TABLE_MAJOR)/' -e 's/@TABLE_MINOR@/$(TABLE_MINOR)/' < table.h > $(HOME)/include/table.h.$(TABLE_MAJOR).$(TABLE_MINOR)
-	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR).$(TABLE_MINOR) table.h.$(TABLE_MAJOR)
-	cd $(HOME)/include && ln --symbolic --force table.h.$(TABLE_MAJOR) table.h
+	mkdir -p $(LIB_DIR)
+	cp libtable.a $(LIB_DIR)/libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR)
+	cd $(LIB_DIR) && ln --symbolic --force libtable.a.$(TABLE_MAJOR).$(TABLE_MINOR) libtable.a.$(TABLE_MAJOR)
+	cd $(LIB_DIR) && ln --symbolic --force libtable.a.$(TABLE_MAJOR) libtable.a
+	mkdir -p $(INCLUDE_DIR)
+	sed -e 's/@TABLE_MAJOR@/$(TABLE_MAJOR)/' -e 's/@TABLE_MINOR@/$(TABLE_MINOR)/' < table.h > $(INCLUDE_DIR)/table.h.$(TABLE_MAJOR).$(TABLE_MINOR)
+	cd $(INCLUDE_DIR) && ln --symbolic --force table.h.$(TABLE_MAJOR).$(TABLE_MINOR) table.h.$(TABLE_MAJOR)
+	cd $(INCLUDE_DIR) && ln --symbolic --force table.h.$(TABLE_MAJOR) table.h
 
 % : %.o
 	$(CXX) $+ $(LDFLAGS) -o $@
