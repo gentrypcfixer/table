@@ -304,7 +304,7 @@ void summarizer::process_line()
         d.sum += *vi;
         d.sum_of_squares += *vi * *vi;
         if(*vi < d.min) d.min = *vi;
-        else if(*vi > d.max) d.max = *vi;
+        if(*vi > d.max) d.max = *vi;
       }
     }
   }

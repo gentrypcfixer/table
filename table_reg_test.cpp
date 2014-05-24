@@ -32,6 +32,24 @@ void generate_data(pass& out, size_t num_columns, size_t num_lines)
   out.process_stream();
 };
 
+void generate_numeric_data(pass& out, size_t num_columns, size_t num_lines)
+{
+  char buf[2048];
+  size_t count = 0;
+
+  for(size_t line = 0; line < num_lines; ++line) {
+    for(size_t column = 0; column < num_columns; ++column) {
+      size_t len;
+      if(!line) len = sprintf(buf, "C%zu", column);
+      else len = sprintf(buf, "%zu", count++);
+      out.process_token(buf, len);
+    }
+
+    out.process_line();
+  }
+
+  out.process_stream();
+};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // simple_validator
@@ -139,12 +157,44 @@ int validate_stacker()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// summarizer
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* summarizer_expect[] = {
+  "C0", "COUNT(C2)", "MAX(C2)", "MISSING(C3)", "COUNT(C3)",  0,
+  "0",  "1",         "2",       "0",           "1",          0,
+  0
+};
+
+int validate_summarizer()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(summarizer_expect);
+
+    summarizer su(v);
+    su.add_group("^C0$");
+    su.add_data("^C2$", SUM_COUNT | SUM_MAX);
+    su.add_data("^C3$", SUM_COUNT | SUM_MISSING);
+
+    generate_numeric_data(su, 4, 2);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
+  validate_summarizer();
 
   return ret_val;
 }

@@ -110,6 +110,8 @@ namespace table {
     pthread_cond_t cons_cond;
     pthread_t thread;
 
+    threader(const threader& other);
+    threader& operator=(const threader& other);
     void resize_write_chunk(size_t min_size);
     void inc_write_chunk(bool term = 1);
 
@@ -154,6 +156,9 @@ namespace table {
     std::vector<std::pair<int, pass*> > dest;
     std::vector<std::pair<int, pass*> >::iterator di;
 
+    subset_tee(const subset_tee& other);
+    subset_tee& operator=(const subset_tee& other);
+
   public:
     subset_tee();
     subset_tee(pass& dest);
@@ -181,6 +186,9 @@ namespace table {
     std::vector<char*> data;
     char* next;
     char* end;
+
+    ordered_tee(const ordered_tee& other);
+    ordered_tee& operator=(const ordered_tee& other);
 
   public:
     ordered_tee();
@@ -236,6 +244,8 @@ namespace table {
     size_t stack_tokens_index;
     char* stack_tokens_next;
 
+    stacker(const stacker& other);
+    stacker& operator=(const stacker& other);
     void push(const char* token, size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next);
     void process_out_line(const char* token, size_t len);
 
@@ -306,6 +316,9 @@ namespace table {
     typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
     data_t data;
 
+    splitter(const splitter& other);
+    splitter& operator=(const splitter& other);
+
   public:
     splitter(split_action_e default_action);
     splitter(pass& out, split_action_e default_action);
@@ -345,6 +358,9 @@ namespace table {
     std::vector<std::string> keys;
 
     std::vector<data_t> data;
+
+    row_joiner(const row_joiner& other);
+    row_joiner& operator=(const row_joiner& other);
 
   public:
     row_joiner();
@@ -445,6 +461,9 @@ namespace table {
     char* buf;
     char* end;
 
+    substitutor(const substitutor& other);
+    substitutor& operator=(const substitutor& other);
+
   public:
     substitutor();
     substitutor(pass& out);
@@ -488,6 +507,9 @@ namespace table {
     char* buf;
     char* end;
 
+    col_adder(const col_adder& other);
+    col_adder& operator=(const col_adder& other);
+
   public:
     col_adder();
     col_adder(pass& out);
@@ -521,6 +543,9 @@ namespace table {
     char* next;
     char* end;
 
+    col_pruner(const col_pruner& other);
+    col_pruner& operator=(const col_pruner& other);
+
   public:
     col_pruner();
     col_pruner(pass& out);
@@ -547,6 +572,9 @@ namespace table {
     int column;
     std::vector<int> remap_indexes;
     std::vector<std::string> tokens;
+
+    combiner(const combiner& other);
+    combiner& operator=(const combiner& other);
 
   public:
     combiner();
@@ -576,6 +604,8 @@ namespace table {
     char* next;
     char* end;
 
+    tabular_writer(const tabular_writer& other);
+    tabular_writer& operator=(const tabular_writer& other);
     void process_data();
 
   public:
@@ -611,6 +641,9 @@ namespace table {
   };
 
   class csv_writer : public csv_writer_base {
+    csv_writer(const csv_writer& other);
+    csv_writer& operator=(const csv_writer& other);
+
   public:
     csv_writer();
     csv_writer(std::streambuf* out);
@@ -622,6 +655,9 @@ namespace table {
   };
 
   class csv_file_writer : public csv_writer_base {
+    csv_file_writer(const csv_file_writer& other);
+    csv_file_writer& operator=(const csv_file_writer& other);
+
   public:
     csv_file_writer();
     csv_file_writer(const char* filename);
@@ -665,6 +701,9 @@ namespace table {
     bool first_row;
     int column;
     std::vector<UnaryOperation*> column_insts;
+
+    basic_unary_col_modifier(const basic_unary_col_modifier& other);
+    basic_unary_col_modifier& operator=(const basic_unary_col_modifier& other);
 
   public:
     basic_unary_col_modifier();
@@ -715,6 +754,9 @@ namespace table {
     std::vector<col_t> columns;
     typename std::vector<col_t>::iterator ci;
 
+    basic_unary_col_adder(const basic_unary_col_adder& other);
+    basic_unary_col_adder& operator=(const basic_unary_col_adder& other);
+
   public:
     basic_unary_col_adder();
     basic_unary_col_adder(pass& out);
@@ -764,6 +806,9 @@ namespace table {
     std::vector<col_t> columns;
     typename std::vector<col_t>::iterator ci;
     std::vector<new_col_t> new_columns;
+
+    basic_binary_col_modifier(const basic_binary_col_modifier& other);
+    basic_binary_col_modifier& operator=(const basic_binary_col_modifier& other);
 
   public:
     basic_binary_col_modifier();
@@ -840,6 +885,9 @@ namespace table {
     typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
     data_t data;
 
+    summarizer(const summarizer& other);
+    summarizer& operator=(const summarizer& other);
+
   public:
     summarizer();
     summarizer(pass& out);
@@ -877,6 +925,9 @@ namespace table {
     double base_value;
     double comp_value;
 
+    differ(const differ& other);
+    differ& operator=(const differ& other);
+
   public:
     differ();
     differ(pass& out, const char* base_key, const char* comp_key, const char* keyword);
@@ -911,6 +962,9 @@ namespace table {
     bool first_row;
     int column;
     std::vector<conv_t> conv;
+
+    base_converter(const base_converter& other);
+    base_converter& operator=(const base_converter& other);
 
   public:
     base_converter();
@@ -964,6 +1018,9 @@ namespace table {
     double* vi;
     typedef std::vector<variance_analyzer_treatment_data_t*> data_t;
     data_t data; // keyword fast, group/treatment slow
+
+    variance_analyzer(const variance_analyzer& other);
+    variance_analyzer& operator=(const variance_analyzer& other);
 
   public:
     variance_analyzer();
