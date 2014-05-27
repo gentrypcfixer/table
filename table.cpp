@@ -1363,7 +1363,7 @@ void col_adder::process_token(const char* token, size_t len)
       int ovector[30]; int rc = pcre_exec(s->from, s->from_extra, token, len, 0, 0, ovector, 30);
       if(rc < 0) {
         if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("col_adder exception match error");
-        out->process_token(token, len);
+        out->process_token("", 0);
       }
       else {
         char* next = buf;
