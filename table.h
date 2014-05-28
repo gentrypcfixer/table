@@ -837,30 +837,31 @@ namespace table {
   ////////////////////////////////////////////////////////////////////////////////////////////////
 
   enum summarizer_flags {
-    SUM_MISSING =  0x0002,
-    SUM_COUNT =    0x0004,
-    SUM_SUM =      0x0008,
-    SUM_MIN =      0x0010,
-    SUM_MAX =      0x0020,
-    SUM_AVG =      0x0040,
-    SUM_VARIANCE = 0x0080,
-    SUM_STD_DEV =  0x0100
-  };
-
-  struct summarizer_data_t
-  {
-    int missing;
-    int count;
-    double sum;
-    double sum_of_squares;
-    double min;
-    double max;
-
-    summarizer_data_t();
+    SUM_MISSING =  0x0004,
+    SUM_COUNT =    0x0008,
+    SUM_SUM =      0x0010,
+    SUM_MIN =      0x0020,
+    SUM_MAX =      0x0040,
+    SUM_AVG =      0x0080,
+    SUM_VARIANCE = 0x0100,
+    SUM_STD_DEV =  0x0200
   };
 
   class summarizer : public pass {
+    struct summarizer_data_t
+    {
+      int missing;
+      int count;
+      double sum;
+      double sum_of_squares;
+      double min;
+      double max;
+
+      summarizer_data_t();
+    };
+
     pass* out;
+    std::vector<pcre*> pre_sorted_group_regexes;
     std::vector<pcre*> group_regexes;
     std::vector<std::pair<pcre*, uint32_t> > data_regexes;
     std::vector<pcre*> exception_regexes;
@@ -872,10 +873,15 @@ namespace table {
     std::vector<uint32_t>::const_iterator cfi;
     double* values;
     double* vi;
+    char* pre_sorted_group_tokens;
+    char* pre_sorted_group_tokens_next;
+    char* pre_sorted_group_tokens_end;
     char* group_tokens;
     char* group_tokens_next;
     char* group_tokens_end;
 
+    char* pre_sorted_group_storage;
+    char* pre_sorted_group_storage_end;
     std::vector<char*> group_storage;
     char* group_storage_next;
     char* group_storage_end;
@@ -887,6 +893,8 @@ namespace table {
 
     summarizer(const summarizer& other);
     summarizer& operator=(const summarizer& other);
+    void print_header(char*& buf, char*& next, char*& end, const char* op, size_t op_len, const char* token, size_t len);
+    void print_data();
 
   public:
     summarizer();
@@ -896,7 +904,7 @@ namespace table {
     summarizer& init(pass& out);
     ~summarizer();
 
-    summarizer& add_group(const char* regex);
+    summarizer& add_group(const char* regex, bool pre_sorted = 0);
     summarizer& add_data(const char* regex, uint32_t flags);
     summarizer& add_exception(const char* regex);
 

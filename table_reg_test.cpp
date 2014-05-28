@@ -161,8 +161,9 @@ int validate_stacker()
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 const char* summarizer_expect[] = {
-  "C0", "COUNT(C2)", "MAX(C2)", "MISSING(C3)", "COUNT(C3)",  0,
-  "0",  "1",         "2",       "0",           "1",          0,
+  "C0", "C1", "COUNT(C2)", "MAX(C2)", "MISSING(C3)", "COUNT(C3)",  0,
+  "0",  "1",          "1",       "2",           "0",         "1",  0,
+  "4",  "5",          "1",       "6",           "0",         "1",  0,
   0
 };
 
@@ -174,11 +175,12 @@ int validate_summarizer()
     simple_validater v(summarizer_expect);
 
     summarizer su(v);
-    su.add_group("^C0$");
+    su.add_group("^C0$", 1);
+    su.add_group("^C1$");
     su.add_data("^C2$", SUM_COUNT | SUM_MAX);
     su.add_data("^C3$", SUM_COUNT | SUM_MISSING);
 
-    generate_numeric_data(su, 4, 2);
+    generate_numeric_data(su, 4, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }

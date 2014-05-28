@@ -75,7 +75,7 @@ static float ibeta(float a, float b, float x)
 // summarizer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-summarizer_data_t::summarizer_data_t() :
+summarizer::summarizer_data_t::summarizer_data_t() :
   missing(0),
   count(0),
   sum(0.0),
@@ -84,8 +84,84 @@ summarizer_data_t::summarizer_data_t() :
   max(-numeric_limits<double>::infinity())
 {}
 
-summarizer::summarizer() : values(0), group_tokens(0) { init(); }
-summarizer::summarizer(pass& out) : values(0), group_tokens(0) { init(out); }
+void summarizer::print_header(char*& buf, char*& next, char*& end, const char* op, size_t op_len, const char* token, size_t len)
+{
+  if(next + op_len + len + 3 > end) resize_buffer(buf, next, end, op_len + len + 3);
+  memcpy(next, op, op_len); next += op_len;
+  *next++ = '(';
+  memcpy(next, token, len); next += len;
+  *next++ = ')';
+  *next++ = '\0';
+}
+
+void summarizer::print_data()
+{
+  if(!data.size()) return;
+
+  *group_storage_next++ = '\x04';
+  data.clear();
+
+  size_t data_rows_per_storage = (256 * 1024) / (sizeof(summarizer_data_t) * num_data_columns);
+  if(!data_rows_per_storage) data_rows_per_storage = 1;
+
+  size_t row = 0;
+  vector<char*>::const_iterator gsi = group_storage.begin();
+  char* g = (gsi == group_storage.end()) ? 0 : *gsi;
+  vector<summarizer_data_t*>::const_iterator dsi = data_storage.begin();
+  summarizer_data_t* d = (dsi == data_storage.end()) ? 0 : *dsi;
+  while(g && d) {
+    if(pre_sorted_group_storage) {
+      char* pg = pre_sorted_group_storage;
+      while(*pg != '\x03') { size_t len = strlen(pg); out->process_token(pg, len); pg += len + 1; }
+    }
+    while(*g != '\x03') { size_t len = strlen(g); out->process_token(g, len); g += len + 1; }
+    ++g;
+    if(*g == '\x04') { delete[] *gsi; ++gsi; g = (gsi == group_storage.end()) ? 0 : *gsi; }
+
+    for(cfi = column_flags.begin(); cfi != column_flags.end(); ++cfi) {
+      if(!((*cfi) & 0xFFFFFFFC)) continue;
+
+      if((*cfi) & SUM_MISSING) { out->process_token((*d).missing); }
+      if((*cfi) & SUM_COUNT) { out->process_token((*d).count); }
+      if((*cfi) & SUM_SUM) { out->process_token((*d).count ? (*d).sum : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_MIN) { out->process_token((*d).count ? (*d).min : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_MAX) { out->process_token((*d).count ? (*d).max : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & SUM_AVG) { out->process_token((*d).count ? ((*d).sum / (*d).count) : numeric_limits<double>::quiet_NaN()); }
+      if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
+        if((*d).count > 1) {
+          double v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
+          v /= (*d).count - 1;
+          if((*cfi) & SUM_VARIANCE) { out->process_token(v); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(sqrt(v)); }
+        }
+        else if((*d).count == 1) {
+          if((*cfi) & SUM_VARIANCE) { out->process_token(0.0); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(0.0); }
+        }
+        else {
+          if((*cfi) & SUM_VARIANCE) { out->process_token(numeric_limits<double>::quiet_NaN()); }
+          if((*cfi) & SUM_STD_DEV) { out->process_token(numeric_limits<double>::quiet_NaN()); }
+        }
+      }
+      ++d;
+    }
+    if((++row % data_rows_per_storage) == (data_rows_per_storage - 1)) {
+      delete[] *dsi; ++dsi; d = (dsi == data_storage.end()) ? 0 : *dsi;
+    }
+
+    out->process_line();
+  }
+
+  for(; gsi != group_storage.end(); ++gsi) delete[] *gsi;
+  group_storage.clear();
+  group_storage_next = 0;
+  for(; dsi != data_storage.end(); ++dsi) delete[] *dsi;
+  data_storage.clear();
+  data_storage_next = 0;
+}
+
+summarizer::summarizer() : values(0), pre_sorted_group_tokens(0), group_tokens(0), pre_sorted_group_storage(0) { init(); }
+summarizer::summarizer(pass& out) : values(0), pre_sorted_group_tokens(0), group_tokens(0), pre_sorted_group_storage(0) { init(out); }
 
 summarizer& summarizer::init()
 {
@@ -100,9 +176,15 @@ summarizer& summarizer::init()
   column_flags.clear();
   num_data_columns = 0;
   delete[] values; values = 0;
+  delete[] pre_sorted_group_tokens; pre_sorted_group_tokens = new char[2048];
+  pre_sorted_group_tokens_next = pre_sorted_group_tokens;
+  pre_sorted_group_tokens_end = pre_sorted_group_tokens + 2048;
   delete[] group_tokens; group_tokens = new char[2048];
   group_tokens_next = group_tokens;
   group_tokens_end = group_tokens + 2048;
+  delete[] pre_sorted_group_storage; pre_sorted_group_storage = new char[2048];
+  *pre_sorted_group_storage = '\x03';
+  pre_sorted_group_storage_end = pre_sorted_group_storage + 2048;
   for(vector<char*>::iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
   group_storage.clear();
   group_storage_next = 0;
@@ -119,20 +201,24 @@ summarizer& summarizer::init(pass& out) { init(); return set_out(out); }
 
 summarizer::~summarizer()
 {
+  for(vector<pcre*>::iterator gri = pre_sorted_group_regexes.begin(); gri != pre_sorted_group_regexes.end(); ++gri) pcre_free(*gri);
   for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) pcre_free(*gri);
   for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) pcre_free((*dri).first);
   for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) pcre_free(*ei);
   delete[] values;
+  delete[] pre_sorted_group_tokens;
   delete[] group_tokens;
+  delete[] pre_sorted_group_storage;
   for(vector<char*>::iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
   for(vector<summarizer_data_t*>::iterator i = data_storage.begin(); i != data_storage.end(); ++i) delete[] *i;
 }
 
-summarizer& summarizer::add_group(const char* regex)
+summarizer& summarizer::add_group(const char* regex, bool pre_sorted)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("summarizer can't compile group regex");
-  group_regexes.push_back(p);
+  if(pre_sorted) pre_sorted_group_regexes.push_back(p);
+  else group_regexes.push_back(p);
   return *this;
 }
 
@@ -140,7 +226,7 @@ summarizer& summarizer::add_data(const char* regex, uint32_t flags)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("summarizer can't compile data regex");
-  data_regexes.push_back(pair<pcre*, uint32_t>(p, flags & 0xFFFFFFFE));
+  data_regexes.push_back(pair<pcre*, uint32_t>(p, flags & 0xFFFFFFFC));
   return *this;
 }
 
@@ -158,10 +244,17 @@ void summarizer::process_token(const char* token, size_t len)
     if(!out) throw runtime_error("summarizer has no out");
 
     uint32_t flags = 0;
-    for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
+    for(vector<pcre*>::iterator gri = pre_sorted_group_regexes.begin(); gri != pre_sorted_group_regexes.end(); ++gri) {
       int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { out->process_token(token, len); flags = 1; break; }
+      if(rc >= 0) { flags = 1; break; }
       else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+    }
+    if(!flags) {
+      for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
+        int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { flags = 2; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+      }
     }
     if(!flags) {
       for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
@@ -169,6 +262,8 @@ void summarizer::process_token(const char* token, size_t len)
         if(rc >= 0) { flags |= (*dri).second; }
         else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
       }
+    }
+    if(flags) {
       for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
         int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
         if(rc >= 0) { flags = 0; break; }
@@ -176,61 +271,32 @@ void summarizer::process_token(const char* token, size_t len)
       }
     }
 
-    if(flags & SUM_MISSING) {
-      if(group_tokens_next + len + 10 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 10);
-      memcpy(group_tokens_next, "MISSING(", 8); group_tokens_next += 8;
+    if(flags & 1) { out->process_token(token, len); }
+    if(flags & 2) {
+      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
+      *group_tokens_next++ = '\0';
     }
-    if(flags & SUM_COUNT) {
-      if(group_tokens_next + len + 8 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 8);
-      memcpy(group_tokens_next, "COUNT(", 6); group_tokens_next += 6;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_SUM) {
-      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
-      memcpy(group_tokens_next, "SUM(", 4); group_tokens_next += 4;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_MIN) {
-      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
-      memcpy(group_tokens_next, "MIN(", 4); group_tokens_next += 4;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_MAX) {
-      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
-      memcpy(group_tokens_next, "MAX(", 4); group_tokens_next += 4;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_AVG) {
-      if(group_tokens_next + len + 6 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 6);
-      memcpy(group_tokens_next, "AVG(", 4); group_tokens_next += 4;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_VARIANCE) {
-      if(group_tokens_next + len + 11 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 11);
-      memcpy(group_tokens_next, "VARIANCE(", 9); group_tokens_next += 9;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_STD_DEV) {
-      if(group_tokens_next + len + 10 > group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 10);
-      memcpy(group_tokens_next, "STD_DEV(", 8); group_tokens_next += 8;
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = ')'; *group_tokens_next++ = '\0';
-    }
+    if(flags & SUM_MISSING) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MISSING", 7, token, len); }
+    if(flags & SUM_COUNT) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "COUNT", 5, token, len); }
+    if(flags & SUM_SUM) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "SUM", 3, token, len); }
+    if(flags & SUM_MIN) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MIN", 3, token, len); }
+    if(flags & SUM_MAX) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MAX", 3, token, len); }
+    if(flags & SUM_AVG) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "AVG", 3, token, len); }
+    if(flags & SUM_VARIANCE) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "VARIANCE", 8, token, len); }
+    if(flags & SUM_STD_DEV) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "STD_DEV", 7, token, len); }
 
     column_flags.push_back(flags);
-    if(flags & 0xFFFFFFFE) ++num_data_columns;
+    if(flags & 0xFFFFFFFC) ++num_data_columns;
   }
   else {
     const uint32_t& flags = *cfi;
     if(flags & 1) {
+      if(pre_sorted_group_tokens_next + len >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, len + 1);
+      memcpy(pre_sorted_group_tokens_next, token, len); pre_sorted_group_tokens_next += len;
+      *pre_sorted_group_tokens_next++ = '\0';
+    }
+    else if(flags & 2) {
       if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = '\0';
@@ -250,6 +316,10 @@ void summarizer::process_token(double token)
 
   const uint32_t& flags = *cfi;
   if(flags & 1) {
+    if(pre_sorted_group_tokens_next + 31 >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, 32);
+    pre_sorted_group_tokens_next += dtostr(token, pre_sorted_group_tokens_next) + 1;
+  }
+  else if(flags & 2) {
     if(group_tokens_next + 31 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, 32);
     group_tokens_next += dtostr(token, group_tokens_next) + 1;
   }
@@ -260,7 +330,13 @@ void summarizer::process_token(double token)
 void summarizer::process_line()
 {
   if(first_line) {
+    if(!num_data_columns) throw runtime_error("summarizer has no data columns");
     for(char* p = group_tokens; p < group_tokens_next; ++p) {
+      size_t len = strlen(p);
+      out->process_token(p, len);
+      p += len;
+    }
+    for(char* p = pre_sorted_group_tokens; p < pre_sorted_group_tokens_next; ++p) { // data column headers
       size_t len = strlen(p);
       out->process_token(p, len);
       p += len;
@@ -270,6 +346,20 @@ void summarizer::process_line()
     values = new double[num_data_columns];
   }
   else {
+    if(pre_sorted_group_tokens_next != pre_sorted_group_tokens) {
+      if(pre_sorted_group_tokens_next >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end);
+      *pre_sorted_group_tokens_next++ = '\x03';
+      multi_cstr_equal_to e;
+      if(!e(pre_sorted_group_tokens, pre_sorted_group_storage)) {
+        const size_t len = pre_sorted_group_tokens_next - pre_sorted_group_tokens;
+        print_data();
+        if(size_t(pre_sorted_group_storage_end - pre_sorted_group_storage) < len) {
+          delete[] pre_sorted_group_storage;
+          pre_sorted_group_storage = new char[pre_sorted_group_tokens_end - pre_sorted_group_tokens];
+        }
+        memcpy(pre_sorted_group_storage, pre_sorted_group_tokens, len);
+      }
+    }
     if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
     *group_tokens_next++ = '\x03';
     data_t::iterator i = data.find(group_tokens);
@@ -311,6 +401,7 @@ void summarizer::process_line()
 
   cfi = column_flags.begin();
   vi = values;
+  pre_sorted_group_tokens_next = pre_sorted_group_tokens;
   group_tokens_next = group_tokens;
 }
 
@@ -318,61 +409,7 @@ void summarizer::process_stream()
 {
   if(!out) throw runtime_error("summarizer has no out");
 
-  *group_storage_next++ = '\x04';
-  data.clear();
-
-  size_t data_rows_per_storage = (256 * 1024) / (sizeof(summarizer_data_t) * num_data_columns);
-  if(!data_rows_per_storage) data_rows_per_storage = 1;
-
-  size_t row = 0;
-  vector<char*>::const_iterator gsi = group_storage.begin();
-  char* g = (gsi == group_storage.end()) ? 0 : *gsi;
-  vector<summarizer_data_t*>::const_iterator dsi = data_storage.begin();
-  summarizer_data_t* d = (dsi == data_storage.end()) ? 0 : *dsi;
-  while(g && d) {
-    while(*g != '\x03') { size_t len = strlen(g); out->process_token(g, len); g += len + 1; }
-    ++g;
-    if(*g == '\x04') { delete[] *gsi; ++gsi; g = (gsi == group_storage.end()) ? 0 : *gsi; }
-
-    for(cfi = column_flags.begin(); cfi != column_flags.end(); ++cfi) {
-      if(!((*cfi) & 0xFFFFFFFE)) continue;
-
-      if((*cfi) & SUM_MISSING) { out->process_token((*d).missing); }
-      if((*cfi) & SUM_COUNT) { out->process_token((*d).count); }
-      if((*cfi) & SUM_SUM) { out->process_token((*d).count ? (*d).sum : numeric_limits<double>::quiet_NaN()); }
-      if((*cfi) & SUM_MIN) { out->process_token((*d).count ? (*d).min : numeric_limits<double>::quiet_NaN()); }
-      if((*cfi) & SUM_MAX) { out->process_token((*d).count ? (*d).max : numeric_limits<double>::quiet_NaN()); }
-      if((*cfi) & SUM_AVG) { out->process_token((*d).count ? ((*d).sum / (*d).count) : numeric_limits<double>::quiet_NaN()); }
-      if((*cfi) & (SUM_VARIANCE | SUM_STD_DEV)) {
-        if((*d).count > 1) {
-          double v = (*d).sum_of_squares - ((*d).sum * (*d).sum) / (*d).count;
-          v /= (*d).count - 1;
-          if((*cfi) & SUM_VARIANCE) { out->process_token(v); }
-          if((*cfi) & SUM_STD_DEV) { out->process_token(sqrt(v)); }
-        }
-        else if((*d).count == 1) {
-          if((*cfi) & SUM_VARIANCE) { out->process_token(0.0); }
-          if((*cfi) & SUM_STD_DEV) { out->process_token(0.0); }
-        }
-        else {
-          if((*cfi) & SUM_VARIANCE) { out->process_token(numeric_limits<double>::quiet_NaN()); }
-          if((*cfi) & SUM_STD_DEV) { out->process_token(numeric_limits<double>::quiet_NaN()); }
-        }
-      }
-      ++d;
-    }
-    if((++row % data_rows_per_storage) == (data_rows_per_storage - 1)) {
-      delete[] *dsi; ++dsi; d = (dsi == data_storage.end()) ? 0 : *dsi;
-    }
-
-    out->process_line();
-  }
-
-  for(; gsi != group_storage.end(); ++gsi) delete[] *gsi;
-  group_storage.clear();
-  for(; dsi != data_storage.end(); ++dsi) delete[] *dsi;
-  data_storage.clear();
-
+  print_data();
   out->process_stream();
 }
 
