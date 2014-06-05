@@ -336,6 +336,60 @@ namespace table {
 
 
   ////////////////////////////////////////////////////////////////////////////////////////////////
+  // sorter
+  ////////////////////////////////////////////////////////////////////////////////////////////////
+
+  class sorter : public pass {
+  public:
+    struct sorts_t {
+      std::string key;
+      uint8_t type;
+    };
+    struct row_t {
+      char* sort;
+      char* other;
+      size_t other_index;
+    };
+
+  private:
+    pass* out;
+    std::vector<sorts_t> sorts;
+
+    std::vector<size_t> columns; //index into sorts or max for other
+    std::vector<size_t>::const_iterator ci;
+    bool first_line;
+
+    char** sort_buf;
+    char** sort_buf_end;
+    size_t sort_buf_len;
+    std::vector<char*> sort_storage;
+    char* sort_next;
+    char* sort_end;
+    std::vector<char*> other_storage;
+    char* other_next;
+    char* other_end;
+    std::vector<row_t> rows;
+
+    sorter(const sorter& other);
+    sorter& operator=(const sorter& other);
+
+  public:
+    sorter();
+    sorter(pass& out);
+    sorter& init();
+    sorter& init(pass& out);
+    ~sorter();
+
+    sorter& set_out(pass& out);
+    sorter& add_sort(const char* key, bool ascending);
+
+    void process_token(const char* token, size_t len);
+    void process_line();
+    void process_stream();
+  };
+
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////
   // row_joiner
   ////////////////////////////////////////////////////////////////////////////////////////////////
 

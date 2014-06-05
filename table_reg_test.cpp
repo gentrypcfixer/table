@@ -51,6 +51,30 @@ void generate_numeric_data(pass& out, size_t num_columns, size_t num_lines)
   out.process_stream();
 };
 
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// feed_data
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+void feed_data(pass& out, const char** data)
+{
+  bool f = 0;
+  const char** p = data;
+
+  while(1) {
+    if(*p) {
+      size_t len = strlen(*p);
+      out.process_token(*p, len);
+      ++p;
+      f = 1;
+    }
+    else if(f) { out.process_line(); ++p; f = 0; }
+    else break;
+  }
+
+  out.process_stream();
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // simple_validator
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -157,6 +181,49 @@ int validate_stacker()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// sorter
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* sorter_input[] = {
+  "C0", "C1", "C2",  0,
+  "1",  "1",  "2",   0,
+  "1",  "4",  "5",   0,
+  "0",  "7",  "8",   0,
+  "0",  "10", "11",  0,
+  0
+};
+
+const char* sorter_expect[] = {
+  "C0", "C2",  "C1", 0,
+  "0",  "8",   "7",  0,
+  "0",  "11",  "10", 0,
+  "1",  "5",   "4",  0,
+  "1",  "2",   "1",  0,
+  0
+};
+
+int validate_sorter()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(sorter_expect);
+    csv_writer w(cout.rdbuf());
+
+    sorter so(w);
+    so.add_sort("C0", 1);
+    so.add_sort("C2", 0);
+
+    feed_data(so, sorter_input);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // summarizer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -196,6 +263,7 @@ int validate_summarizer()
 int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
+  validate_sorter();
   validate_summarizer();
 
   return ret_val;

@@ -916,6 +916,254 @@ void splitter::process_stream()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// sorter
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+sorter::sorter() : sort_buf(0), sort_buf_end(0) { init(); }
+sorter::sorter(pass& out) : sort_buf(0), sort_buf_end(0) { init(out); }
+
+sorter& sorter::init()
+{
+  this->out = 0;
+  columns.clear();
+  first_line = 1;
+  delete[] sort_buf_end; sort_buf_end = 0;
+  if(sort_buf) { for(size_t i = 0; i < sorts.size(); ++i) delete[] sort_buf[i]; }
+  delete[] sort_buf; sort_buf = 0;
+  sorts.clear();
+  for(vector<char*>::const_iterator i = sort_storage.begin(); i != sort_storage.end(); ++i) delete[] *i;
+  sort_storage.clear();
+  sort_next = 0;
+  sort_end = 0;
+  for(vector<char*>::const_iterator i = other_storage.begin(); i != other_storage.end(); ++i) delete[] *i;
+  other_storage.clear();
+  other_next = 0;
+  other_end = 0;
+  rows.clear();
+  return *this;
+}
+
+sorter& sorter::init(pass& out) { init(); return set_out(out); } 
+
+sorter::~sorter() {
+  delete[] sort_buf_end;
+  if(sort_buf) { for(size_t i = 0; i < sorts.size(); ++i) delete[] sort_buf[i]; }
+  delete[] sort_buf;
+  for(vector<char*>::const_iterator i = sort_storage.begin(); i != sort_storage.end(); ++i) delete[] *i;
+  for(vector<char*>::const_iterator i = other_storage.begin(); i != other_storage.end(); ++i) delete[] *i;
+}
+
+sorter& sorter::set_out(pass& out) { this->out = &out; return *this; }
+
+sorter& sorter::add_sort(const char* key, bool ascending)
+{
+  sorts.resize(sorts.size() + 1);
+  sorts.back().key = key;
+  sorts.back().type = ascending ? 1 : 2;
+  return *this;
+}
+
+void sorter::process_token(const char* token, size_t len)
+{
+  size_t index;
+
+  if(first_line) {
+    if(!out) throw runtime_error("sorter has no out");
+
+    if(!sort_buf) {
+      sort_buf = new char*[sorts.size()];
+      sort_buf_end = new char*[sorts.size()];
+      for(size_t i = 0; i < sorts.size(); ++i) {
+        sort_buf[i] = new char[16];
+        *sort_buf[i] = '\0';
+        sort_buf_end[i] = sort_buf[i] + 16;
+      }
+      sort_buf_len = 0;
+    }
+
+    index = numeric_limits<size_t>::max();
+    for(size_t i = 0; i < sorts.size(); ++i) {
+      if(!sorts[i].key.compare(token)) { index = i; break; }
+    }
+    columns.push_back(index);
+  }
+  else {
+    if(ci == columns.begin()) {
+      rows.resize(rows.size() + 1);
+      rows.back().sort = sort_next;
+      rows.back().other = other_next;
+      rows.back().other_index = other_storage.size() ? other_storage.size() - 1 : 0;
+    }
+    index = *ci++;
+  }
+
+  if(index == numeric_limits<size_t>::max()) {
+    if(other_next + len + 2 >= other_end) {
+      if(other_storage.size() && other_next == other_storage.back()) {
+        size_t row_off = rows.size() ? rows.back().other - other_storage.back() : 0;
+        resize_buffer(other_storage.back(), other_next, other_end, len + 2);
+        if(rows.size()) rows.back().other = other_next + row_off;
+      }
+      else {
+        if(other_next) *other_next = '\x04';
+        size_t cap = len + 2;
+        if(cap < 256 * 1024) cap = 256 * 1024;
+        other_storage.resize(other_storage.size() + 1);
+        other_storage.back() = new char[cap];
+        other_next = other_storage.back();
+        other_end = other_storage.back() + cap;
+        if(rows.size() && !rows.back().other) rows.back().other = other_next;
+      }
+    }
+    memcpy(other_next, token, len); other_next += len;
+    *other_next++ = '\0';
+  }
+  else {
+    char* next = sort_buf[index];
+    if(sort_buf[index] + len >= sort_buf_end[index]) resize_buffer(sort_buf[index], next, sort_buf_end[index], len + 1);
+    memcpy(next, token, len); next += len;
+    *next++ = '\0';
+    sort_buf_len += len;
+  }
+}
+
+void sorter::process_line()
+{
+  if(first_line) {
+    if(!out) throw runtime_error("sorter has no out");
+    first_line = 0;
+
+    for(size_t i = 0; i < sorts.size(); ++i) {
+      out->process_token(sort_buf[i], strlen(sort_buf[i]));
+      sort_buf[i][0] = '\0';
+    }
+
+    *other_next++ = '\x03';
+    vector<char*>::iterator osi = other_storage.begin();
+    char* p = osi == other_storage.end() ? 0 : *osi;
+    while(1) {
+      const char* s = p;
+      while(*p) ++p;
+      out->process_token(s, p - s);
+      ++p;
+      if(*p == '\x03') { delete[] *osi; break; }
+      else if(*p == '\x04') {
+        delete[] *osi; *osi = 0;
+        ++osi;
+        p = osi == other_storage.end() ? 0 : *osi;
+      }
+    }
+    other_storage.clear();
+    other_next = 0;
+    other_end = 0;
+    out->process_line();
+  }
+  else {
+    if(!sort_storage.size() || sort_storage.back() + sort_buf_len + sorts.size() + 2 > sort_end) {
+      if(sort_storage.size() && rows.back().sort == sort_storage.back()) {
+        size_t row_off = rows.back().sort - sort_storage.back();
+        resize_buffer(sort_storage.back(), sort_next, sort_end, sort_buf_len + sorts.size() + 2);
+        rows.back().sort = sort_next + row_off;
+      }
+      else {
+        if(sort_next) *sort_next = '\x04';
+        sort_storage.resize(sort_storage.size() + 1);
+        size_t cap = sort_buf_len + sorts.size() + 2;
+        if(cap < 256 * 1024) cap = 256 * 1024;
+        sort_storage.back() = new char[cap];
+        sort_next = sort_storage.back();
+        sort_end = sort_storage.back() + cap;
+        if(!rows.back().sort) rows.back().sort = sort_next;
+      }
+    }
+    for(size_t i = 0; i < sorts.size(); ++i) {
+      char* p = sort_buf[i];
+      while(*p) *sort_next++ = *p++;
+      *sort_next++ = '\0';
+    }
+    *sort_next++ = '\x03';
+    *other_next++ = '\x03';
+    for(size_t i = 0; i < sorts.size(); ++i) { *sort_buf[i] = '\0'; }
+  }
+
+  ci = columns.begin();
+}
+
+struct sorter_compare {
+  const vector<sorter::sorts_t>& sorts;
+
+  sorter_compare(const vector<sorter::sorts_t>& sorts) : sorts(sorts) {}
+
+  bool operator() (const sorter::row_t& lhs, const sorter::row_t& rhs) {
+    vector<sorter::sorts_t>::const_iterator i = sorts.begin();
+    const char* l = lhs.sort;
+    const char* r = rhs.sort;
+
+    while(1) {
+      uint8_t type = (*i).type;
+
+      while(*l == *r && *l != '\0') { ++l; ++r; }
+
+      if(*l < *r) return type == 1 ? 1 : 0;
+      else if(*l > *r) return type == 1 ? 0 : 1;
+      else { //both at null terminator
+        if(*++l == '\x03') break;
+        else ++r;
+      }
+
+      ++i;
+    }
+
+    return 0;
+  }
+};
+
+void sorter::process_stream()
+{
+  if(!out) throw runtime_error("sorter has no out");
+
+  if(sort_next) *sort_next++ = '\x04';
+  if(other_next) *other_next++ = '\x04';
+
+  sorter_compare comp(sorts);
+  sort(rows.begin(), rows.end(), comp);
+
+  for(vector<row_t>::iterator ri = rows.begin(); ri != rows.end(); ++ri) {
+    for(const char* p = (*ri).sort; *p != '\x03';) {
+      size_t len = strlen(p);
+      out->process_token(p, len);
+      p += len + 1;
+    }
+    size_t index = (*ri).other_index;
+    for(const char* p = (*ri).other; *p != '\x03';) {
+      size_t len = strlen(p);
+      out->process_token(p, len);
+      p += len + 1;
+      if(*p == '\x04') {
+        p = other_storage[++index];
+      }
+    }
+    out->process_line();
+  }
+
+  columns.clear();
+  delete[] sort_buf_end; sort_buf_end = 0;
+  if(sort_buf) { for(size_t i = 0; i < sorts.size(); ++i) delete[] sort_buf[i]; }
+  delete[] sort_buf; sort_buf = 0;
+  for(vector<char*>::const_iterator i = sort_storage.begin(); i != sort_storage.end(); ++i) delete[] *i;
+  sort_storage.clear();
+  sort_next = 0;
+  sort_end = 0;
+  for(vector<char*>::const_iterator i = other_storage.begin(); i != other_storage.end(); ++i) delete[] *i;
+  other_storage.clear();
+  other_next = 0;
+  other_end = 0;
+
+  out->process_stream();
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // row_joiner
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
