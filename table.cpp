@@ -926,6 +926,7 @@ sorter& sorter::init()
 {
   this->out = 0;
   columns.clear();
+  sorts_found = 0;
   first_line = 1;
   delete[] sort_buf_end; sort_buf_end = 0;
   if(sort_buf) { for(size_t i = 0; i < sorts.size(); ++i) delete[] sort_buf[i]; }
@@ -957,6 +958,9 @@ sorter& sorter::set_out(pass& out) { this->out = &out; return *this; }
 
 sorter& sorter::add_sort(const char* key, bool ascending)
 {
+  for(vector<sorts_t>::const_iterator i = sorts.begin(); i != sorts.end(); ++i)
+    if(!(*i).key.compare(key))
+      throw runtime_error("sorter has sort already");
   sorts.resize(sorts.size() + 1);
   sorts.back().key = key;
   sorts.back().type = ascending ? 1 : 2;
@@ -983,7 +987,7 @@ void sorter::process_token(const char* token, size_t len)
 
     index = numeric_limits<size_t>::max();
     for(size_t i = 0; i < sorts.size(); ++i) {
-      if(!sorts[i].key.compare(token)) { index = i; break; }
+      if(!sorts[i].key.compare(token)) { index = i; ++sorts_found; break; }
     }
     columns.push_back(index);
   }
@@ -1031,6 +1035,8 @@ void sorter::process_line()
 {
   if(first_line) {
     if(!out) throw runtime_error("sorter has no out");
+    if(sorts_found < sorts.size()) throw runtime_error("sorter didn't find enough columns");
+    if(sorts_found > sorts.size()) throw runtime_error("sorter didn't find too many sort columns");
     first_line = 0;
 
     for(size_t i = 0; i < sorts.size(); ++i) {

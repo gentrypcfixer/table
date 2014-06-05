@@ -357,6 +357,7 @@ namespace table {
 
     std::vector<size_t> columns; //index into sorts or max for other
     std::vector<size_t>::const_iterator ci;
+    size_t sorts_found;
     bool first_line;
 
     char** sort_buf;
