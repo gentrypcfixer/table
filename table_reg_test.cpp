@@ -208,9 +208,8 @@ int validate_sorter()
 
   try {
     simple_validater v(sorter_expect);
-    csv_writer w(cout.rdbuf());
 
-    sorter so(w);
+    sorter so(v);
     so.add_sort("C0", 1);
     so.add_sort("C2", 0);
 
