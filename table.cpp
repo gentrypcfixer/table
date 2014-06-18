@@ -2047,7 +2047,7 @@ tabular_writer& tabular_writer::set_out(streambuf* out) { if(!out) throw runtime
 void tabular_writer::process_token(const char* token, size_t len)
 {
   if(!line) {
-    if(!next || len + 20 > size_t(end - data.back())) {
+    if(!next || next + len + 20 > end) {
       size_t cap = 256 * 1024;
       if(cap < len + 20) cap = len + 20;
       data.push_back(new char[cap]);
@@ -2061,8 +2061,8 @@ void tabular_writer::process_token(const char* token, size_t len)
     next = data.back();
   }
   else if(line < 20) {
-    if(line && max_width[column] < len) max_width[column] = len;
-    if(!next || len + 2 > size_t(end - next)) {
+    if(max_width[column] < len) max_width[column] = len;
+    if(!next || next + len + 2 > end) {
       if(next) *next++ = '\03';
       size_t cap = 256 * 1024;
       if(cap < len + 2) cap = len + 2;
@@ -2070,10 +2070,11 @@ void tabular_writer::process_token(const char* token, size_t len)
       next = data.back();
       end = data.back() + cap;
     }
-    memcpy(next, token, len + 1); next += len + 1;
+    memcpy(next, token, len); next += len;
+    *next++ = '\0';
   }
   else {
-    if(line && max_width[column] < len) max_width[column] = len;
+    if(max_width[column] < len) max_width[column] = len;
     size_t spaces = 1 + max_width[column] - len;
 
     for(size_t i = 0; i < spaces; ++i)
