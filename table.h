@@ -746,9 +746,6 @@ namespace table {
     {
       pcre* regex;
       UnaryOperation unary_op;
-
-      inst_t() : regex(0) {}
-      ~inst_t() { pcre_free(regex); }
     };
 
     pass* out;
@@ -763,6 +760,7 @@ namespace table {
   public:
     basic_unary_col_modifier();
     basic_unary_col_modifier(pass& out);
+    ~basic_unary_col_modifier();
     basic_unary_col_modifier& init();
     basic_unary_col_modifier& init(pass& out);
     basic_unary_col_modifier& set_out(pass& out);
@@ -787,9 +785,6 @@ namespace table {
       pcre* regex;
       std::string new_key;
       UnaryOperation unary_op;
-
-      inst_t() : regex(0) {}
-      ~inst_t() { pcre_free(regex); }
     };
 
     struct col_t
@@ -840,9 +835,6 @@ namespace table {
       pcre* regex;
       std::string other_key;
       BinaryOperation binary_op;
-
-      inst_t() : regex(0) {}
-      ~inst_t() { pcre_free(regex); }
     };
 
     struct col_info_t { size_t index; bool passthrough; };
@@ -1127,9 +1119,15 @@ namespace table {
   template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::basic_unary_col_modifier() { init(); }
   template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::basic_unary_col_modifier(pass& out) { init(out); }
 
+  template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::~basic_unary_col_modifier()
+  {
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+  }
+
   template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basic_unary_col_modifier<UnaryOperation>::init()
   {
     out = 0;
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
     insts.clear();
     first_row = 1;
     column = 0;
@@ -1206,11 +1204,17 @@ namespace table {
 
   template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder() : buf(0) { init(); }
   template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder(pass& out) : buf(0) { init(out); }
-  template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::~basic_unary_col_adder() { delete[] buf; }
+
+  template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::~basic_unary_col_adder()
+  {
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+    delete[] buf;
+  }
 
   template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::init()
   {
     out = 0;
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
     insts.clear();
     first_row = 1;
     column = 0;
@@ -1312,12 +1316,14 @@ namespace table {
 
   template<typename BinaryOperation> basic_binary_col_modifier<BinaryOperation>::~basic_binary_col_modifier()
   {
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
     for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
   }
 
   template<typename BinaryOperation> basic_binary_col_modifier<BinaryOperation>& basic_binary_col_modifier<BinaryOperation>::init()
   {
     out = 0;
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
     insts.clear();
     first_row = 1;
     column = 0;

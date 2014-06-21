@@ -256,12 +256,10 @@ void summarizer::process_token(const char* token, size_t len)
         else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
       }
     }
-    if(!flags) {
-      for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
-        int ovector[30]; int rc = pcre_exec((*dri).first, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { flags |= (*dri).second; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
-      }
+    for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
+      int ovector[30]; int rc = pcre_exec((*dri).first, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { flags |= (*dri).second; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
     }
     if(flags) {
       for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
@@ -301,9 +299,9 @@ void summarizer::process_token(const char* token, size_t len)
       memcpy(group_tokens_next, token, len); group_tokens_next += len;
       *group_tokens_next++ = '\0';
     }
-    else if(flags) {
-      char* next; *vi = strtod(token, &next);
-      if(next == token) *vi = numeric_limits<double>::quiet_NaN();
+    if(flags & 0xFFFFFFFC) {
+      if(!len) { *vi = numeric_limits<double>::quiet_NaN(); }
+      else { *vi = strtod(token, 0); }
       ++vi;
     }
     ++cfi;
@@ -323,7 +321,7 @@ void summarizer::process_token(double token)
     if(group_tokens_next + 31 >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, 32);
     group_tokens_next += dtostr(token, group_tokens_next) + 1;
   }
-  else if(flags) { *vi++ = token; }
+  if(flags & 0xFFFFFFFC) { *vi++ = token; }
   ++cfi;
 }
 
