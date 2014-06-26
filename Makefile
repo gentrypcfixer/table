@@ -28,14 +28,16 @@ LDFLAGS = -L$(LIB_DIR) -lpcre -lpthread $(LDFLAGS_$(OS)) $(EXTRA_LDFLAGS)
 AR = ar
 ARFLAGS = rcs
 
+PROGS = table_stack table_test table_reg_test
+
 .PHONY : all release debug clean install
 
 all : release debug
-release : libtable.a table_stack table_test table_reg_test
-debug : libtable_debug.a table_stack_debug table_test_debug table_reg_test_debug
+release : libtable.a $(PROGS)
+debug : libtable_debug.a $(addsuffix _debug,$(PROGS))
 
 clean :
-	@rm -f *.o lib*.a *.exe table_stack table_stack_debug table_test table_test_debug table_reg_test table_reg_test_debug
+	rm -f *.o lib*.a *.exe $(PROGS) $(addsuffix _debug,$(PROGS))
 
 install :
 	mkdir -p $(LIB_DIR)
