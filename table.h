@@ -876,6 +876,57 @@ namespace table {
 
 
   ////////////////////////////////////////////////////////////////////////////////////////////////
+  // binary_col_adder
+  ////////////////////////////////////////////////////////////////////////////////////////////////
+
+  template<typename BinaryOperation> class basic_binary_col_adder : public pass {
+    struct inst_t
+    {
+      pcre* regex;
+      std::string other_key;
+      std::string new_key;
+      BinaryOperation binary_op;
+    };
+
+    struct col_info_t { size_t index; };
+    struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
+    struct col_t { size_t col; double val; };
+    struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
+
+    pass* out;
+    std::vector<inst_t> insts;
+    bool first_row;
+    size_t column;
+    std::vector<char*> key_storage;
+    char* key_storage_next;
+    char* key_storage_end;
+    std::vector<char*> keys;
+    std::vector<col_t> columns;
+    typename std::vector<col_t>::iterator ci;
+    std::vector<new_col_t> new_columns;
+
+    basic_binary_col_adder(const basic_binary_col_adder& other);
+    basic_binary_col_adder& operator=(const basic_binary_col_adder& other);
+
+  public:
+    basic_binary_col_adder();
+    basic_binary_col_adder(pass& out);
+    ~basic_binary_col_adder();
+    basic_binary_col_adder& init();
+    basic_binary_col_adder& init(pass& out);
+    basic_binary_col_adder& set_out(pass& out);
+    basic_binary_col_adder& add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op);
+
+    void process_token(const char* token, size_t len);
+    void process_token(double token);
+    void process_line();
+    void process_stream();
+  };
+
+  typedef basic_binary_col_adder<double (*)(double, double)> binary_col_adder;
+
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////
   // numeric.cpp
   ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1475,6 +1526,170 @@ namespace table {
   template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperation>::process_stream()
   {
     if(!out) throw runtime_error("basic_binary_col_modifier has no out");
+    out->process_stream();
+  }
+
+
+  ////////////////////////////////////////////////////////////////////////////////////////////////
+  // binary_col_adder
+  ////////////////////////////////////////////////////////////////////////////////////////////////
+
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::basic_binary_col_adder() { init(); }
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::basic_binary_col_adder(pass& out) { init(out); }
+
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::~basic_binary_col_adder()
+  {
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+    for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+  }
+
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::init()
+  {
+    out = 0;
+    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+    insts.clear();
+    first_row = 1;
+    column = 0;
+    for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+    key_storage.clear();
+    key_storage_next = 0;
+    key_storage_end = 0;
+    keys.clear();
+    columns.clear();
+    new_columns.clear();
+    return *this;
+  }
+
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::init(pass& out) { init(); return set_out(out); }
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
+
+  template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op)
+  {
+    const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
+    if(!p) throw runtime_error("basic_binary_col_adder can't compile regex");
+    insts.resize(insts.size() + 1);
+    insts.back().regex = p;
+    insts.back().other_key = other_key;
+    insts.back().new_key = new_key;
+    insts.back().binary_op = binary_op;
+    return *this;
+  }
+
+  template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_token(const char* token, size_t len)
+  {
+    out->process_token(token, len);
+
+    if(first_row) {
+      if(!out) throw runtime_error("basic_binary_col_adder has no out");
+      if(len + 1 > size_t(key_storage_end - key_storage_next)) {
+        size_t cap = 256 * 1024;
+        if(cap < len + 1) cap = len + 1;
+        key_storage.push_back(new char[cap]);
+        key_storage_next = key_storage.back();
+        key_storage_end = key_storage.back() + cap;
+      }
+      keys.push_back(key_storage_next);
+      memcpy(key_storage_next, token, len); key_storage_next += len;
+      *key_storage_next++ = '\0';
+    }
+    else {
+      if(ci != columns.end() && (*ci).col == column) {
+        char* next; (*ci).val = strtod(token, &next);
+        if(next == token) (*ci).val = numeric_limits<double>::quiet_NaN();
+        ++ci;
+      }
+    }
+
+    ++column;
+  }
+
+  template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_token(double token)
+  {
+    if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
+
+    out->process_token(token);
+
+    if(ci != columns.end() && (*ci).col == column) {
+      (*ci).val = token;
+      ++ci;
+    }
+
+    ++column;
+  }
+
+  template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_line()
+  {
+    if(first_row) {
+      if(!out) throw runtime_error("basic_binary_col_adder has no out");
+
+      char* buf = new char[2048];
+      char* end = buf + 2048;
+      map<size_t, col_info_t> cols;
+      map<size_t, vector<new_col_info_t> > new_cols;
+
+      for(column = 0; column < keys.size(); ++column) {
+        const size_t len = strlen(keys[column]);
+        for(typename vector<inst_t>::iterator ii = insts.begin(); ii != insts.end(); ++ii) {
+          int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column], len, 0, 0, ovector, 30);
+          if(rc < 0){ if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_binary_col_adder match error"); }
+          else {
+            out->process_token((*ii).new_key.c_str(), (*ii).new_key.size());
+            char* next = buf;
+            if(!rc) rc = 10;
+            generate_substitution(keys[column], (*ii).other_key.c_str(), ovector, rc, buf, next, end);
+            size_t other_col = 0;
+            while(other_col < keys.size() && strcmp(keys[other_col], buf)) ++other_col;
+            if(other_col >= keys.size()) {
+              stringstream msg; msg << "basic_binary_col_adder could not find " << buf << " which is paired with " << keys[column];
+              throw runtime_error(msg.str());
+            }
+            cols.insert(typename map<size_t, col_info_t>::value_type(column, col_info_t()));
+            cols.insert(typename map<size_t, col_info_t>::value_type(other_col, col_info_t()));
+            vector<new_col_info_t>& nciv = new_cols[column];
+            nciv.resize(nciv.size() + 1);
+            nciv.back().other_col = other_col;
+            nciv.back().binary_op = &(*ii).binary_op;
+          }
+        }
+      }
+
+      for(typename map<size_t, col_info_t>::iterator i = cols.begin(); i != cols.end(); ++i) {
+        (*i).second.index = columns.size();
+        col_t c;
+        c.col = (*i).first;
+        columns.push_back(c);
+      }
+
+      for(typename map<size_t, vector<new_col_info_t> >::iterator i = new_cols.begin(); i != new_cols.end(); ++i) {
+        for(typename vector<new_col_info_t>::iterator j = (*i).second.begin(); j != (*i).second.end(); ++j) {
+          new_columns.resize(new_columns.size() + 1);
+          new_col_t& c = new_columns.back();
+          c.col_index = cols[(*i).first].index;
+          c.other_col_index = cols[(*j).other_col].index;
+          c.binary_op = (*j).binary_op;
+        }
+      }
+
+      delete[] buf;
+      first_row = 0;
+      keys.clear();
+      for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+      key_storage.clear();
+      key_storage_next = 0;
+      key_storage_end = 0;
+    }
+    else {
+      for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i)
+        out->process_token((*(*i).binary_op)(columns[(*i).col_index].val, columns[(*i).other_col_index].val));
+    }
+    out->process_line();
+    column = 0;
+    ci = columns.begin();
+  }
+
+  template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_stream()
+  {
+    if(!out) throw runtime_error("basic_binary_col_adder has no out");
     out->process_stream();
   }
 }

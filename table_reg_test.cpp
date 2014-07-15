@@ -223,6 +223,40 @@ int validate_sorter()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// col_modifiers and col_adders
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* bca_expect[] = {
+  "C0", "C1", "sum", "mult",  0,
+  "0",  "1",  "1",   "0",     0,
+  "2",  "3",  "5",   "6",     0,
+  0
+};
+
+double sum(double a, double b) { return a + b; }
+double mult(double a, double b) { return a * b; }
+
+int validate_mod_add()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(bca_expect);
+
+    binary_col_adder a(v);
+    a.add("^C0$", "C1", "sum", sum);
+    a.add("^C1$", "C0", "mult", mult);
+
+    generate_numeric_data(a, 2, 3);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // summarizer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -263,6 +297,7 @@ int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
   validate_sorter();
+  validate_mod_add();
   validate_summarizer();
 
   return ret_val;
