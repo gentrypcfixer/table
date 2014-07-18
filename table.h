@@ -1008,7 +1008,10 @@ typedef basic_unary_col_modifier<double (*)(double)> unary_col_modifier;
 // unary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class basic_unary_col_adder : public pass {
+template<typename in_t, typename out_t, typename UnaryOperation> class basic_unary_col_adder : public pass {
+  static_assert(std::is_same<in_t, double>::value || std::is_same<in_t, c_str_and_len_t>::value, "unsuported type");
+  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
+
   struct inst_t
   {
     pcre* regex;
@@ -1016,13 +1019,8 @@ template<typename UnaryOperation> class basic_unary_col_adder : public pass {
     UnaryOperation unary_op;
   };
 
-  struct col_t
-  {
-    size_t col;
-    double val;
-    UnaryOperation* unary_op;
-    std::string new_key;
-  };
+  struct col_t { size_t col; double double_val; c_str_and_len_t c_str_val; const char* c_str_end; };
+  struct new_col_t { size_t col_index; std::string key; UnaryOperation* unary_op; };
 
   pass* out;
   std::vector<inst_t> insts;
@@ -1032,9 +1030,14 @@ template<typename UnaryOperation> class basic_unary_col_adder : public pass {
   char* end;
   std::vector<col_t> columns;
   typename std::vector<col_t>::iterator ci;
+  std::vector<new_col_t> new_columns;
 
   basic_unary_col_adder(const basic_unary_col_adder& other);
   basic_unary_col_adder& operator=(const basic_unary_col_adder& other);
+  c_str_and_len_t& get_in_value(size_t index, c_str_and_len_t* dummy);
+  double& get_in_value(size_t index, double* dummy);
+  void process_new_col(c_str_and_len_t& val);
+  void process_new_col(double& val);
 
 public:
   basic_unary_col_adder();
@@ -1051,7 +1054,10 @@ public:
   void process_stream();
 };
 
-typedef basic_unary_col_adder<double (*)(double)> unary_col_adder;
+typedef basic_unary_col_adder<double, double, double (*)(double)> unary_col_adder;
+typedef basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> unary_c_str_col_adder;
+typedef basic_unary_col_adder<double, c_str_and_len_t, c_str_and_len_t (*)(double)> unary_double_c_str_col_adder;
+typedef basic_unary_col_adder<c_str_and_len_t, double, double (*)(c_str_and_len_t)> unary_c_str_double_col_adder;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1275,16 +1281,42 @@ template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>:
 // unary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder() : buf(0) { init(); }
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::basic_unary_col_adder(pass& out) : buf(0) { init(out); }
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline c_str_and_len_t& basic_unary_col_adder<in_t, out_t, UnaryOperation>::get_in_value(size_t index, c_str_and_len_t* dummy)
+{
+  return columns[index].c_str_val;
+}
 
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>::~basic_unary_col_adder()
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline double& basic_unary_col_adder<in_t, out_t, UnaryOperation>::get_in_value(size_t index, double* dummy)
+{
+  return columns[index].double_val;
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_new_col(c_str_and_len_t& val)
+{
+  out->process_token(val.c_str, val.len);
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_new_col(double& val)
+{
+  out->process_token(val);
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_adder<in_t, out_t, UnaryOperation>::basic_unary_col_adder() : buf(0) { init(); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_adder<in_t, out_t, UnaryOperation>::basic_unary_col_adder(pass& out) : buf(0) { init(out); }
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_adder<in_t, out_t, UnaryOperation>::~basic_unary_col_adder()
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
   delete[] buf;
 }
 
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::init()
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_adder<in_t, out_t, UnaryOperation>& basic_unary_col_adder<in_t, out_t, UnaryOperation>::init()
 {
   out = 0;
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
@@ -1294,13 +1326,15 @@ template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_u
   delete[] buf; buf = new char[2048];
   end = buf + 2048;
   columns.clear();
+  new_columns.clear();
   return *this;
 }
 
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::init(pass& out) { init(); return set_out(out); }
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_adder<in_t, out_t, UnaryOperation>& basic_unary_col_adder<in_t, out_t, UnaryOperation>::init(pass& out) { init(); return set_out(out); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_adder<in_t, out_t, UnaryOperation>& basic_unary_col_adder<in_t, out_t, UnaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
 
-template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_unary_col_adder<UnaryOperation>::add(const char* regex, const char* new_key, const UnaryOperation& unary_op)
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_adder<in_t, out_t, UnaryOperation>& basic_unary_col_adder<in_t, out_t, UnaryOperation>::add(const char* regex, const char* new_key, const UnaryOperation& unary_op)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("basic_unary_col_adder can't compile regex");
@@ -1311,30 +1345,51 @@ template<typename UnaryOperation> basic_unary_col_adder<UnaryOperation>& basic_u
   return *this;
 }
 
-template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::process_token(const char* token, size_t len)
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!out) throw runtime_error("basic_unary_col_adder has no out");
+    bool match = 0;
     for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) {
       int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
       if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_unary_col_adder match error"); }
       else {
-        columns.resize(columns.size() + 1);
-        columns.back().col = column;
-        columns.back().unary_op = &(*i).unary_op;
+        new_columns.resize(new_columns.size() + 1);
+        new_columns.back().col_index = columns.size();
         char* next = buf;
         if(!rc) rc = 10;
         generate_substitution(token, (*i).new_key.c_str(), ovector, rc, buf, next, end);
-        columns.back().new_key = buf;
+        new_columns.back().key = buf;
+        new_columns.back().unary_op = &(*i).unary_op;
+        match = 1;
       }
+    }
+    if(match) {
+      columns.resize(columns.size() + 1);
+      columns.back().col = column;
     }
     out->process_token(token, len);
   }
   else {
     if(ci != columns.end() && column == (*ci).col) {
-      char* next; double val = strtod(token, &next);
-      if(next == token) val = numeric_limits<double>::quiet_NaN();
-      do { (*ci++).val = val; } while(ci != columns.end() && column == (*ci).col);
+      col_t& c = *ci;
+      if(is_same<in_t, double>::value) {
+        char* next; c.double_val = strtod(token, &next);
+        if(next == token) c.double_val = numeric_limits<double>::quiet_NaN();
+      }
+      else {
+        if(!c.c_str_val.c_str || c.c_str_val.c_str + len >= c.c_str_end) {
+          const size_t cap = ((len + 1) * 150) / 100;
+          c.c_str_val.c_str = new char[cap];
+          c.c_str_end = c.c_str_val.c_str + cap;
+        }
+        char* next = (char*)c.c_str_val.c_str;
+        memcpy(next, token, len); next += len;
+        *next = '\0';
+        c.c_str_val.len = len;
+      }
+      ++ci;
     }
     out->process_token(token, len);
   }
@@ -1342,38 +1397,53 @@ template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::pr
   ++column;
 }
 
-template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::process_token(double token)
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_token(double token)
 {
   if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   if(ci != columns.end() && column == (*ci).col) {
-    do { (*ci++).val = token; } while(ci != columns.end() && column == (*ci).col);
+    col_t& c = *ci;
+    if(is_same<in_t, double>::value) { c.double_val = token; }
+    else {
+      if(!c.c_str_val.c_str || c.c_str_val.c_str + 32 > c.c_str_end) {
+        c.c_str_val.c_str = new char[32];
+        c.c_str_end = c.c_str_val.c_str + 32;
+      }
+      c.c_str_val.len = dtostr(token, (char*)c.c_str_val.c_str);
+    }
+    ++ci;
   }
   out->process_token(token);
 
   ++column;
 }
 
-template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::process_line()
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_line()
 {
   if(first_row) {
     if(!out) throw runtime_error("basic_unary_col_adder has no out");
     first_row = 0;
-    for(typename vector<col_t>::iterator i = columns.begin(); i != columns.end(); ++i) {
-      out->process_token((*i).new_key.c_str(), (*i).new_key.size());
-      (*i).new_key.clear();
+    for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
+      out->process_token((*i).key.c_str(), (*i).key.size());
+      (*i).key.clear();
     }
   }
   else {
-    for(typename vector<col_t>::iterator i = columns.begin(); i != columns.end(); ++i)
-      out->process_token((*(*i).unary_op)((*i).val));
+    for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
+      in_t in = get_in_value((*i).col_index, (in_t*)0);
+      out_t val = (*(*i).unary_op)(in);
+      process_new_col(val);
+    }
   }
   out->process_line();
   column = 0;
   ci = columns.begin();
 }
 
-template<typename UnaryOperation> void basic_unary_col_adder<UnaryOperation>::process_stream()
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_stream()
 {
   if(!out) throw runtime_error("basic_unary_col_adder has no out");
   out->process_stream();

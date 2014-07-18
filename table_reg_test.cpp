@@ -223,7 +223,107 @@ int validate_sorter()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// col_modifiers and col_adders
+// unary_col_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* uca_dd_expect[] = {
+  "C0", "tripple", 0,
+  "0",  "0",       0,
+  "1",  "3",       0,
+  0
+};
+
+double tripple(double a) { return a * 3; }
+
+const char* uca_ss_expect[] = {
+  "L0_C0", "ss_hash", 0,
+  "L1_C0", "ODD",     0,
+  "L2_C0", "EVEN",    0,
+  0
+};
+
+c_str_and_len_t uca_ss_hash(c_str_and_len_t a)
+{
+  c_str_and_len_t res;
+
+  const char* pa = a.c_str;
+  uint8_t sum = 0;
+  for(size_t i = 0; i < a.len; ++i, ++pa) {
+    sum = (sum ^ a.c_str[i]) * 59;
+  }
+
+  if(sum & 2) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+
+  return res;
+}
+
+const char* uca_ds_expect[] = {
+  "C0", "cat", 0,
+  "0",  "EVEN",    0,
+  "1",  "ODD",     0,
+  0
+};
+
+c_str_and_len_t uca_cat(double a)
+{
+  c_str_and_len_t res;
+  if(lround(a) & 1) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+  return res;
+}
+
+const char* uca_sd_expect[] = {
+  "L0_C0", "sd_hash", 0,
+  "L1_C0", "243",     0,
+  "L2_C0", "44",      0,
+  0
+};
+
+double uca_sd_hash(c_str_and_len_t a)
+{
+  const char* pa = a.c_str;
+  uint8_t sum = 0;
+  for(size_t i = 0; i < a.len; ++i, ++pa) {
+    sum = (sum ^ a.c_str[i]) * 59;
+  }
+  return sum;
+}
+
+int validate_unary_col_adder()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(uca_dd_expect);
+    unary_col_adder a(v);
+    a.add("^C0$", "tripple", tripple);
+    generate_numeric_data(a, 1, 3);
+
+    v.init(uca_ss_expect);
+    unary_c_str_col_adder sa(v);
+    sa.add("^L0_C0$", "ss_hash", uca_ss_hash);
+    generate_data(sa, 1, 3);
+
+    v.init(uca_ds_expect);
+    unary_double_c_str_col_adder dsa(v);
+    dsa.add("^C0$", "cat", uca_cat);
+    generate_numeric_data(dsa, 1, 3);
+
+    v.init(uca_sd_expect);
+    unary_c_str_double_col_adder sda(v);
+    sda.add("^L0_C0$", "sd_hash", uca_sd_hash);
+    generate_data(sda, 1, 3);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// binary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 const char* bca_dd_expect[] = {
@@ -243,7 +343,7 @@ const char* bca_ss_expect[] = {
   0
 };
 
-c_str_and_len_t ss_hash(c_str_and_len_t a, c_str_and_len_t b)
+c_str_and_len_t bca_ss_hash(c_str_and_len_t a, c_str_and_len_t b)
 {
   c_str_and_len_t res;
 
@@ -269,7 +369,7 @@ const char* bca_ds_expect[] = {
   0
 };
 
-c_str_and_len_t cat(double a, double b)
+c_str_and_len_t bca_cat(double a, double b)
 {
   c_str_and_len_t res;
   if(lround(a + b) & 4) { res.c_str = "ODD"; res.len = 3; }
@@ -284,7 +384,7 @@ const char* bca_sd_expect[] = {
   0
 };
 
-double sd_hash(c_str_and_len_t a, c_str_and_len_t b)
+double bca_sd_hash(c_str_and_len_t a, c_str_and_len_t b)
 {
   const char* pa = a.c_str;
   const char* pb = b.c_str;
@@ -297,7 +397,7 @@ double sd_hash(c_str_and_len_t a, c_str_and_len_t b)
   return sum;
 }
 
-int validate_mod_add()
+int validate_binary_col_adder()
 {
   int ret_val = 0;
 
@@ -310,17 +410,17 @@ int validate_mod_add()
 
     v.init(bca_ss_expect);
     binary_c_str_col_adder sa(v);
-    sa.add("^L0_C0$", "L0_C1", "ss_hash", ss_hash);
+    sa.add("^L0_C0$", "L0_C1", "ss_hash", bca_ss_hash);
     generate_data(sa, 2, 3);
 
     v.init(bca_ds_expect);
     binary_double_c_str_col_adder dsa(v);
-    dsa.add("^C0$", "C1", "cat", cat);
+    dsa.add("^C0$", "C1", "cat", bca_cat);
     generate_numeric_data(dsa, 2, 3);
 
     v.init(bca_sd_expect);
     binary_c_str_double_col_adder sda(v);
-    sda.add("^L0_C0$", "L0_C1", "sd_hash", sd_hash);
+    sda.add("^L0_C0$", "L0_C1", "sd_hash", bca_sd_hash);
     generate_data(sda, 2, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -371,7 +471,8 @@ int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
   validate_sorter();
-  validate_mod_add();
+  validate_unary_col_adder();
+  validate_binary_col_adder();
   validate_summarizer();
 
   return ret_val;
