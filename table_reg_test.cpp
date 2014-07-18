@@ -226,7 +226,7 @@ int validate_sorter()
 // col_modifiers and col_adders
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-const char* bca_expect[] = {
+const char* bca_dd_expect[] = {
   "C0", "C1", "sum", "mult",  0,
   "0",  "1",  "1",   "0",     0,
   "2",  "3",  "5",   "6",     0,
@@ -236,18 +236,92 @@ const char* bca_expect[] = {
 double sum(double a, double b) { return a + b; }
 double mult(double a, double b) { return a * b; }
 
+const char* bca_ss_expect[] = {
+  "L0_C0", "L0_C1", "ss_hash", 0,
+  "L1_C0", "L1_C1", "EVEN",    0,
+  "L2_C0", "L2_C1", "ODD",     0,
+  0
+};
+
+c_str_and_len_t ss_hash(c_str_and_len_t a, c_str_and_len_t b)
+{
+  c_str_and_len_t res;
+
+  const char* pa = a.c_str;
+  const char* pb = b.c_str;
+  size_t len = min(a.len, b.len);
+  uint8_t sum = 0;
+  for(size_t i = 0; i < len; ++i, ++pa, ++pb) {
+    sum = (sum ^ a.c_str[i]) * 59;
+    sum = (sum ^ b.c_str[i]) * 59;
+  }
+
+  if(sum & 2) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+
+  return res;
+}
+
+const char* bca_ds_expect[] = {
+  "C0", "C1", "cat", 0,
+  "0",  "1",  "EVEN",    0,
+  "2",  "3",  "ODD",     0,
+  0
+};
+
+c_str_and_len_t cat(double a, double b)
+{
+  c_str_and_len_t res;
+  if(lround(a + b) & 4) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+  return res;
+}
+
+const char* bca_sd_expect[] = {
+  "L0_C0", "L0_C1", "sd_hash", 0,
+  "L1_C0", "L1_C1", "213",    0,
+  "L2_C0", "L2_C1", "211",     0,
+  0
+};
+
+double sd_hash(c_str_and_len_t a, c_str_and_len_t b)
+{
+  const char* pa = a.c_str;
+  const char* pb = b.c_str;
+  size_t len = min(a.len, b.len);
+  uint8_t sum = 0;
+  for(size_t i = 0; i < len; ++i, ++pa, ++pb) {
+    sum = (sum ^ a.c_str[i]) * 59;
+    sum = (sum ^ b.c_str[i]) * 59;
+  }
+  return sum;
+}
+
 int validate_mod_add()
 {
   int ret_val = 0;
 
   try {
-    simple_validater v(bca_expect);
-
+    simple_validater v(bca_dd_expect);
     binary_col_adder a(v);
     a.add("^C0$", "C1", "sum", sum);
     a.add("^C1$", "C0", "mult", mult);
-
     generate_numeric_data(a, 2, 3);
+
+    v.init(bca_ss_expect);
+    binary_c_str_col_adder sa(v);
+    sa.add("^L0_C0$", "L0_C1", "ss_hash", ss_hash);
+    generate_data(sa, 2, 3);
+
+    v.init(bca_ds_expect);
+    binary_double_c_str_col_adder dsa(v);
+    dsa.add("^C0$", "C1", "cat", cat);
+    generate_numeric_data(dsa, 2, 3);
+
+    v.init(bca_sd_expect);
+    binary_c_str_double_col_adder sda(v);
+    sda.add("^L0_C0$", "L0_C1", "sd_hash", sd_hash);
+    generate_data(sda, 2, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }

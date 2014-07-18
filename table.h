@@ -734,199 +734,6 @@ void read_csv(const char* filename, pass& out);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// numeric templates
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// unary_col_modifier
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename UnaryOperation> class basic_unary_col_modifier : public pass {
-  struct inst_t
-  {
-    pcre* regex;
-    UnaryOperation unary_op;
-  };
-
-  pass* out;
-  std::vector<inst_t> insts;
-  bool first_row;
-  int column;
-  std::vector<UnaryOperation*> column_insts;
-
-  basic_unary_col_modifier(const basic_unary_col_modifier& other);
-  basic_unary_col_modifier& operator=(const basic_unary_col_modifier& other);
-
-public:
-  basic_unary_col_modifier();
-  basic_unary_col_modifier(pass& out);
-  ~basic_unary_col_modifier();
-  basic_unary_col_modifier& init();
-  basic_unary_col_modifier& init(pass& out);
-  basic_unary_col_modifier& set_out(pass& out);
-  basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
-
-  void process_token(const char* token, size_t len);
-  void process_token(double token);
-  void process_line();
-  void process_stream();
-};
-
-typedef basic_unary_col_modifier<double (*)(double)> unary_col_modifier;
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// unary_col_adder
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename UnaryOperation> class basic_unary_col_adder : public pass {
-  struct inst_t
-  {
-    pcre* regex;
-    std::string new_key;
-    UnaryOperation unary_op;
-  };
-
-  struct col_t
-  {
-    size_t col;
-    double val;
-    UnaryOperation* unary_op;
-    std::string new_key;
-  };
-
-  pass* out;
-  std::vector<inst_t> insts;
-  bool first_row;
-  size_t column;
-  char* buf;
-  char* end;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
-
-  basic_unary_col_adder(const basic_unary_col_adder& other);
-  basic_unary_col_adder& operator=(const basic_unary_col_adder& other);
-
-public:
-  basic_unary_col_adder();
-  basic_unary_col_adder(pass& out);
-  ~basic_unary_col_adder();
-  basic_unary_col_adder& init();
-  basic_unary_col_adder& init(pass& out);
-  basic_unary_col_adder& set_out(pass& out);
-  basic_unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
-
-  void process_token(const char* token, size_t len);
-  void process_token(double token);
-  void process_line();
-  void process_stream();
-};
-
-typedef basic_unary_col_adder<double (*)(double)> unary_col_adder;
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// binary_col_modifier
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename BinaryOperation> class basic_binary_col_modifier : public pass {
-  struct inst_t
-  {
-    pcre* regex;
-    std::string other_key;
-    BinaryOperation binary_op;
-  };
-
-  struct col_info_t { size_t index; bool passthrough; };
-  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
-  struct col_t { size_t col; double val; bool passthrough; };
-  struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
-
-  pass* out;
-  std::vector<inst_t> insts;
-  bool first_row;
-  size_t column;
-  std::vector<char*> key_storage;
-  char* key_storage_next;
-  char* key_storage_end;
-  std::vector<char*> keys;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
-  std::vector<new_col_t> new_columns;
-
-  basic_binary_col_modifier(const basic_binary_col_modifier& other);
-  basic_binary_col_modifier& operator=(const basic_binary_col_modifier& other);
-
-public:
-  basic_binary_col_modifier();
-  basic_binary_col_modifier(pass& out);
-  ~basic_binary_col_modifier();
-  basic_binary_col_modifier& init();
-  basic_binary_col_modifier& init(pass& out);
-  basic_binary_col_modifier& set_out(pass& out);
-  basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
-
-  void process_token(const char* token, size_t len);
-  void process_token(double token);
-  void process_line();
-  void process_stream();
-};
-
-typedef basic_binary_col_modifier<double (*)(double, double)> binary_col_modifier;
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// binary_col_adder
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-template<typename BinaryOperation> class basic_binary_col_adder : public pass {
-  struct inst_t
-  {
-    pcre* regex;
-    std::string other_key;
-    std::string new_key;
-    BinaryOperation binary_op;
-  };
-
-  struct col_info_t { size_t index; };
-  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
-  struct col_t { size_t col; double val; };
-  struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
-
-  pass* out;
-  std::vector<inst_t> insts;
-  bool first_row;
-  size_t column;
-  std::vector<char*> key_storage;
-  char* key_storage_next;
-  char* key_storage_end;
-  std::vector<char*> keys;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
-  std::vector<new_col_t> new_columns;
-
-  basic_binary_col_adder(const basic_binary_col_adder& other);
-  basic_binary_col_adder& operator=(const basic_binary_col_adder& other);
-
-public:
-  basic_binary_col_adder();
-  basic_binary_col_adder(pass& out);
-  ~basic_binary_col_adder();
-  basic_binary_col_adder& init();
-  basic_binary_col_adder& init(pass& out);
-  basic_binary_col_adder& set_out(pass& out);
-  basic_binary_col_adder& add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op);
-
-  void process_token(const char* token, size_t len);
-  void process_token(double token);
-  void process_line();
-  void process_stream();
-};
-
-typedef basic_binary_col_adder<double (*)(double, double)> binary_col_adder;
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
 // numeric.cpp
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1145,6 +952,220 @@ public:
   void process_line();
   void process_stream();
 };
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// templates to allow regular functions
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct c_str_and_len_t
+{
+  const char* c_str;
+  size_t len;
+  c_str_and_len_t() : c_str(0), len(0) {}
+};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// unary_col_modifier
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename UnaryOperation> class basic_unary_col_modifier : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    UnaryOperation unary_op;
+  };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  int column;
+  std::vector<UnaryOperation*> column_insts;
+
+  basic_unary_col_modifier(const basic_unary_col_modifier& other);
+  basic_unary_col_modifier& operator=(const basic_unary_col_modifier& other);
+
+public:
+  basic_unary_col_modifier();
+  basic_unary_col_modifier(pass& out);
+  ~basic_unary_col_modifier();
+  basic_unary_col_modifier& init();
+  basic_unary_col_modifier& init(pass& out);
+  basic_unary_col_modifier& set_out(pass& out);
+  basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
+
+  void process_token(const char* token, size_t len);
+  void process_token(double token);
+  void process_line();
+  void process_stream();
+};
+
+typedef basic_unary_col_modifier<double (*)(double)> unary_col_modifier;
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// unary_col_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename UnaryOperation> class basic_unary_col_adder : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    std::string new_key;
+    UnaryOperation unary_op;
+  };
+
+  struct col_t
+  {
+    size_t col;
+    double val;
+    UnaryOperation* unary_op;
+    std::string new_key;
+  };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  size_t column;
+  char* buf;
+  char* end;
+  std::vector<col_t> columns;
+  typename std::vector<col_t>::iterator ci;
+
+  basic_unary_col_adder(const basic_unary_col_adder& other);
+  basic_unary_col_adder& operator=(const basic_unary_col_adder& other);
+
+public:
+  basic_unary_col_adder();
+  basic_unary_col_adder(pass& out);
+  ~basic_unary_col_adder();
+  basic_unary_col_adder& init();
+  basic_unary_col_adder& init(pass& out);
+  basic_unary_col_adder& set_out(pass& out);
+  basic_unary_col_adder& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
+
+  void process_token(const char* token, size_t len);
+  void process_token(double token);
+  void process_line();
+  void process_stream();
+};
+
+typedef basic_unary_col_adder<double (*)(double)> unary_col_adder;
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// binary_col_modifier
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename BinaryOperation> class basic_binary_col_modifier : public pass {
+  struct inst_t
+  {
+    pcre* regex;
+    std::string other_key;
+    BinaryOperation binary_op;
+  };
+
+  struct col_info_t { size_t index; bool passthrough; };
+  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
+  struct col_t { size_t col; double val; bool passthrough; };
+  struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  size_t column;
+  std::vector<char*> key_storage;
+  char* key_storage_next;
+  char* key_storage_end;
+  std::vector<char*> keys;
+  std::vector<col_t> columns;
+  typename std::vector<col_t>::iterator ci;
+  std::vector<new_col_t> new_columns;
+
+  basic_binary_col_modifier(const basic_binary_col_modifier& other);
+  basic_binary_col_modifier& operator=(const basic_binary_col_modifier& other);
+
+public:
+  basic_binary_col_modifier();
+  basic_binary_col_modifier(pass& out);
+  ~basic_binary_col_modifier();
+  basic_binary_col_modifier& init();
+  basic_binary_col_modifier& init(pass& out);
+  basic_binary_col_modifier& set_out(pass& out);
+  basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
+
+  void process_token(const char* token, size_t len);
+  void process_token(double token);
+  void process_line();
+  void process_stream();
+};
+
+typedef basic_binary_col_modifier<double (*)(double, double)> binary_col_modifier;
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// binary_col_adder
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> class basic_binary_col_adder : public pass {
+  static_assert(std::is_same<in1_t, double>::value || std::is_same<in1_t, c_str_and_len_t>::value, "unsuported type");
+  static_assert(std::is_same<in2_t, double>::value || std::is_same<in2_t, c_str_and_len_t>::value, "unsuported type");
+  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
+
+  struct inst_t
+  {
+    pcre* regex;
+    std::string other_key;
+    std::string new_key;
+    BinaryOperation binary_op;
+  };
+
+  struct col_info_t { size_t index; bool need_double; bool need_c_str; };
+  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
+  struct col_t { size_t col; bool need_double; double double_val; bool need_c_str; c_str_and_len_t c_str_val; const char* c_str_end; };
+  struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation* binary_op; };
+
+  pass* out;
+  std::vector<inst_t> insts;
+  bool first_row;
+  size_t column;
+  std::vector<char*> key_storage;
+  char* key_storage_next;
+  char* key_storage_end;
+  std::vector<char*> keys;
+  std::vector<col_t> columns;
+  typename std::vector<col_t>::iterator ci;
+  std::vector<new_col_t> new_columns;
+
+  basic_binary_col_adder(const basic_binary_col_adder& other);
+  basic_binary_col_adder& operator=(const basic_binary_col_adder& other);
+  c_str_and_len_t& get_in_value(size_t index, c_str_and_len_t* dummy);
+  double& get_in_value(size_t index, double* dummy);
+  void process_new_col(c_str_and_len_t& val);
+  void process_new_col(double& val);
+
+public:
+  basic_binary_col_adder();
+  basic_binary_col_adder(pass& out);
+  ~basic_binary_col_adder();
+  basic_binary_col_adder& init();
+  basic_binary_col_adder& init(pass& out);
+  basic_binary_col_adder& set_out(pass& out);
+  basic_binary_col_adder& add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op);
+
+  void process_token(const char* token, size_t len);
+  void process_token(double token);
+  void process_line();
+  void process_stream();
+};
+
+typedef basic_binary_col_adder<double, double, double, double (*)(double, double)> binary_col_adder;
+typedef basic_binary_col_adder<c_str_and_len_t, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t, c_str_and_len_t)> binary_c_str_col_adder;
+typedef basic_binary_col_adder<double, double, c_str_and_len_t, c_str_and_len_t (*)(double, double)> binary_double_c_str_col_adder;
+typedef basic_binary_col_adder<c_str_and_len_t, c_str_and_len_t, double, double (*)(c_str_and_len_t, c_str_and_len_t)> binary_c_str_double_col_adder;
+
+
 }
 
 
@@ -1155,6 +1176,7 @@ public:
 #include <stdexcept>
 #include <sstream>
 #include <limits>
+#include <type_traits>
 #include <math.h>
 #include <stdio.h>
 
@@ -1534,16 +1556,42 @@ template<typename BinaryOperation> void basic_binary_col_modifier<BinaryOperatio
 // binary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::basic_binary_col_adder() { init(); }
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::basic_binary_col_adder(pass& out) { init(out); }
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+inline c_str_and_len_t& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::get_in_value(size_t index, c_str_and_len_t* dummy)
+{
+  return columns[index].c_str_val;
+}
 
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>::~basic_binary_col_adder()
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+inline double& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::get_in_value(size_t index, double* dummy)
+{
+  return columns[index].double_val;
+}
+
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+inline void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_new_col(c_str_and_len_t& val)
+{
+  out->process_token(val.c_str, val.len);
+}
+
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+inline void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_new_col(double& val)
+{
+  out->process_token(val);
+}
+
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::basic_binary_col_adder() { init(); }
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::basic_binary_col_adder(pass& out) { init(out); }
+
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::~basic_binary_col_adder()
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
   for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
 }
 
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::init()
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::init()
 {
   out = 0;
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
@@ -1560,10 +1608,11 @@ template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basi
   return *this;
 }
 
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::init(pass& out) { init(); return set_out(out); }
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::init(pass& out) { init(); return set_out(out); }
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
 
-template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basic_binary_col_adder<BinaryOperation>::add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op)
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("basic_binary_col_adder can't compile regex");
@@ -1575,7 +1624,8 @@ template<typename BinaryOperation> basic_binary_col_adder<BinaryOperation>& basi
   return *this;
 }
 
-template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_token(const char* token, size_t len)
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_token(const char* token, size_t len)
 {
   out->process_token(token, len);
 
@@ -1594,8 +1644,22 @@ template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>:
   }
   else {
     if(ci != columns.end() && (*ci).col == column) {
-      char* next; (*ci).val = strtod(token, &next);
-      if(next == token) (*ci).val = numeric_limits<double>::quiet_NaN();
+      col_t& c = *ci;
+      if(c.need_double) {
+        char* next; c.double_val = strtod(token, &next);
+        if(next == token) c.double_val = numeric_limits<double>::quiet_NaN();
+      }
+      if(c.need_c_str) {
+        if(!c.c_str_val.c_str || c.c_str_val.c_str + len >= c.c_str_end) {
+          const size_t cap = ((len + 1) * 150) / 100;
+          c.c_str_val.c_str = new char[cap];
+          c.c_str_end = c.c_str_val.c_str + cap;
+        }
+        char* next = (char*)c.c_str_val.c_str;
+        memcpy(next, token, len); next += len;
+        *next = '\0';
+        c.c_str_val.len = len;
+      }
       ++ci;
     }
   }
@@ -1603,21 +1667,31 @@ template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>:
   ++column;
 }
 
-template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_token(double token)
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_token(double token)
 {
   if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   out->process_token(token);
 
   if(ci != columns.end() && (*ci).col == column) {
-    (*ci).val = token;
+    col_t& c = *ci;
+    if(c.need_double) { (*ci).double_val = token; }
+    if(c.need_c_str) {
+      if(!c.c_str_val.c_str || c.c_str_val.c_str + 32 > c.c_str_end) {
+        c.c_str_val.c_str = new char[32];
+        c.c_str_end = c.c_str_val.c_str + 32;
+      }
+      c.c_str_val.len = dtostr(token, (char*)c.c_str_val.c_str);
+    }
     ++ci;
   }
 
   ++column;
 }
 
-template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_line()
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_line()
 {
   if(first_row) {
     if(!out) throw runtime_error("basic_binary_col_adder has no out");
@@ -1643,8 +1717,17 @@ template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>:
             stringstream msg; msg << "basic_binary_col_adder could not find " << buf << " which is paired with " << keys[column];
             throw runtime_error(msg.str());
           }
-          cols.insert(typename map<size_t, col_info_t>::value_type(column, col_info_t()));
-          cols.insert(typename map<size_t, col_info_t>::value_type(other_col, col_info_t()));
+
+          col_info_t i; i.need_double = 0; i.need_c_str = 0;
+          col_info_t* p;
+          p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);
+          if(is_same<in1_t, double>::value) p->need_double = 1;
+          else p->need_c_str = 1;
+
+          p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(other_col, i)).first).second);
+          if(is_same<in2_t, double>::value) p->need_double = 1;
+          else p->need_c_str = 1;
+
           vector<new_col_info_t>& nciv = new_cols[column];
           nciv.resize(nciv.size() + 1);
           nciv.back().other_col = other_col;
@@ -1655,9 +1738,11 @@ template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>:
 
     for(typename map<size_t, col_info_t>::iterator i = cols.begin(); i != cols.end(); ++i) {
       (*i).second.index = columns.size();
-      col_t c;
+      columns.resize(columns.size() + 1);
+      col_t& c = columns.back();
       c.col = (*i).first;
-      columns.push_back(c);
+      c.need_double = (*i).second.need_double;
+      c.need_c_str = (*i).second.need_c_str;
     }
 
     for(typename map<size_t, vector<new_col_info_t> >::iterator i = new_cols.begin(); i != new_cols.end(); ++i) {
@@ -1679,15 +1764,20 @@ template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>:
     key_storage_end = 0;
   }
   else {
-    for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i)
-      out->process_token((*(*i).binary_op)(columns[(*i).col_index].val, columns[(*i).other_col_index].val));
+    for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
+      in1_t& in1 = get_in_value((*i).col_index, (in1_t*)0);
+      in2_t& in2 = get_in_value((*i).other_col_index, (in2_t*)0);
+      out_t val = (*(*i).binary_op)(in1, in2);
+      process_new_col(val);
+    }
   }
   out->process_line();
   column = 0;
   ci = columns.begin();
 }
 
-template<typename BinaryOperation> void basic_binary_col_adder<BinaryOperation>::process_stream()
+template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
+void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_stream()
 {
   if(!out) throw runtime_error("basic_binary_col_adder has no out");
   out->process_stream();
