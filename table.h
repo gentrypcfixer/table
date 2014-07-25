@@ -1378,6 +1378,7 @@ template<typename in_t, typename out_t, typename UnaryOperation>
 basic_unary_col_adder<in_t, out_t, UnaryOperation>::~basic_unary_col_adder()
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
   delete[] buf;
 }
 
@@ -1391,6 +1392,7 @@ basic_unary_col_adder<in_t, out_t, UnaryOperation>& basic_unary_col_adder<in_t, 
   column = 0;
   delete[] buf; buf = new char[2048];
   end = buf + 2048;
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
   columns.clear();
   new_columns.clear();
   return *this;
@@ -1512,6 +1514,11 @@ template<typename in_t, typename out_t, typename UnaryOperation>
 void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_stream()
 {
   if(!out) throw runtime_error("basic_unary_col_adder has no out");
+
+  new_columns.clear();
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
+  columns.clear();
+
   out->process_stream();
 }
 
@@ -1724,6 +1731,7 @@ basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::~basic_binary_col_
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
   for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
 }
 
 template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
@@ -1739,6 +1747,7 @@ basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_a
   key_storage_next = 0;
   key_storage_end = 0;
   keys.clear();
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
   columns.clear();
   new_columns.clear();
   return *this;
@@ -1916,6 +1925,11 @@ template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperatio
 void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_stream()
 {
   if(!out) throw runtime_error("basic_binary_col_adder has no out");
+
+  new_columns.clear();
+  for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; }
+  columns.clear();
+
   out->process_stream();
 }
 }

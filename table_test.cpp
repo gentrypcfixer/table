@@ -78,7 +78,7 @@ void calculator::process_line()
 
 double filter(double i)
 {
-  if(!isnan(i) && (i < -500.0 || i > 500.0)) return numeric_limits<double>::quiet_NaN();
+  if(!std::isnan(i) && (i < -500.0 || i > 500.0)) return numeric_limits<double>::quiet_NaN();
   else return i;
 }
 
@@ -89,7 +89,7 @@ double sum(double a, double b)
 
 double calc(double a, double b)
 {
-  if(isnan(a) || isnan(b)) return numeric_limits<double>::quiet_NaN();
+  if(std::isnan(a) || std::isnan(b)) return numeric_limits<double>::quiet_NaN();
   else return a * 13.0 + b;
 }
 
