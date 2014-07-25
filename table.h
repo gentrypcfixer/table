@@ -963,6 +963,7 @@ struct c_str_and_len_t
   const char* c_str;
   size_t len;
   c_str_and_len_t() : c_str(0), len(0) {}
+  c_str_and_len_t(const char* c_str, size_t len) : c_str(c_str), len(len) {}
 };
 
 
@@ -970,7 +971,10 @@ struct c_str_and_len_t
 // unary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> class basic_unary_col_modifier : public pass {
+template<typename in_t, typename out_t, typename UnaryOperation> class basic_unary_col_modifier : public pass {
+  static_assert(std::is_same<in_t, double>::value || std::is_same<in_t, c_str_and_len_t>::value, "unsuported type");
+  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
+
   struct inst_t
   {
     pcre* regex;
@@ -985,6 +989,12 @@ template<typename UnaryOperation> class basic_unary_col_modifier : public pass {
 
   basic_unary_col_modifier(const basic_unary_col_modifier& other);
   basic_unary_col_modifier& operator=(const basic_unary_col_modifier& other);
+  c_str_and_len_t get_in_value(const char* token, size_t len, c_str_and_len_t* dummy);
+  c_str_and_len_t get_in_value(double token, char* buf, c_str_and_len_t* dummy);
+  double get_in_value(const char* token, size_t len, double* dummy);
+  double get_in_value(double token, char* buf, double* dummy);
+  void process_new_col(c_str_and_len_t& val);
+  void process_new_col(double& val);
 
 public:
   basic_unary_col_modifier();
@@ -1001,7 +1011,10 @@ public:
   void process_stream();
 };
 
-typedef basic_unary_col_modifier<double (*)(double)> unary_col_modifier;
+typedef basic_unary_col_modifier<double, double, double (*)(double)> unary_col_modifier;
+typedef basic_unary_col_modifier<c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> unary_c_str_col_modifier;
+typedef basic_unary_col_modifier<double, c_str_and_len_t, c_str_and_len_t (*)(double)> unary_double_c_str_col_modifier;
+typedef basic_unary_col_modifier<c_str_and_len_t, double, double (*)(c_str_and_len_t)> unary_c_str_double_col_modifier;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1195,15 +1208,58 @@ using namespace std;
 // unary_col_modifier
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::basic_unary_col_modifier() { init(); }
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::basic_unary_col_modifier(pass& out) { init(out); }
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline c_str_and_len_t basic_unary_col_modifier<in_t, out_t, UnaryOperation>::get_in_value(const char* token, size_t len, c_str_and_len_t* dummy)
+{
+  return c_str_and_len_t(token, len);
+}
 
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>::~basic_unary_col_modifier()
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline c_str_and_len_t basic_unary_col_modifier<in_t, out_t, UnaryOperation>::get_in_value(double token, char* buf, c_str_and_len_t* dummy)
+{
+  c_str_and_len_t ret;
+  ret.c_str = buf;
+  ret.len = dtostr(token, buf);
+  return ret;
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline double basic_unary_col_modifier<in_t, out_t, UnaryOperation>::get_in_value(const char* token, size_t len, double* dummy)
+{
+  char* next; double ret = strtod(token, &next);
+  if(next == token) ret = numeric_limits<double>::quiet_NaN();
+  return ret;
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline double basic_unary_col_modifier<in_t, out_t, UnaryOperation>::get_in_value(double token, char* buf, double* dummy)
+{
+  return token;
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_new_col(c_str_and_len_t& val)
+{
+  out->process_token(val.c_str, val.len);
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+inline void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_new_col(double& val)
+{
+  out->process_token(val);
+}
+
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier() { init(); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier(pass& out) { init(out); }
+
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_modifier<in_t, out_t, UnaryOperation>::~basic_unary_col_modifier()
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
 }
 
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basic_unary_col_modifier<UnaryOperation>::init()
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::init()
 {
   out = 0;
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
@@ -1214,10 +1270,11 @@ template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basi
   return *this;
 }
 
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basic_unary_col_modifier<UnaryOperation>::init(pass& out) { init(); return set_out(out); }
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basic_unary_col_modifier<UnaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::init(pass& out) { init(); return set_out(out); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
 
-template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basic_unary_col_modifier<UnaryOperation>::add(const char* regex, const UnaryOperation& unary_op)
+template<typename in_t, typename out_t, typename UnaryOperation>
+basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::add(const char* regex, const UnaryOperation& unary_op)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("basic_unary_col_modifier can't compile regex");
@@ -1227,7 +1284,8 @@ template<typename UnaryOperation> basic_unary_col_modifier<UnaryOperation>& basi
   return *this;
 }
 
-template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_token(const char* token, size_t len)
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_token(const char* token, size_t len)
 {
   if(first_row) {
     if(!out) throw runtime_error("basic_unary_col_modifier has no out");
@@ -1243,26 +1301,33 @@ template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>:
   else {
     if(!column_insts[column]) out->process_token(token, len);
     else {
-      char* next; double val = strtod(token, &next);
-      if(next == token) val = numeric_limits<double>::quiet_NaN();
-      out->process_token((*column_insts[column])(val));
+      in_t in = get_in_value(token, len, (in_t*)0);
+      out_t val = (*column_insts[column])(in);
+      process_new_col(val);
     }
   }
 
   ++column;
 }
 
-template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_token(double token)
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_token(double token)
 {
   if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
 
   if(!column_insts[column]) out->process_token(token);
-  else out->process_token((*column_insts[column])(token));
+  else {
+    char buf[32];
+    in_t in = get_in_value(token, buf, (in_t*)0);
+    out_t val = (*column_insts[column])(in);
+    process_new_col(val);
+  }
 
   ++column;
 }
 
-template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_line()
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_line()
 {
   if(!out) throw runtime_error("basic_unary_col_modifier has no out");
   out->process_line();
@@ -1270,7 +1335,8 @@ template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>:
   column = 0;
 }
 
-template<typename UnaryOperation> void basic_unary_col_modifier<UnaryOperation>::process_stream()
+template<typename in_t, typename out_t, typename UnaryOperation>
+void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_stream()
 {
   if(!out) throw runtime_error("basic_unary_col_modifier has no out");
   out->process_stream();

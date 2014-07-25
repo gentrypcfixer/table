@@ -223,6 +223,106 @@ int validate_sorter()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// unary_col_modifier
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* ucm_dd_expect[] = {
+  "C0", 0,
+  "0",  0,
+  "4",  0,
+  0
+};
+
+double quadruple(double a) { return a * 4; }
+
+const char* ucm_ss_expect[] = {
+  "L0_C0", 0,
+  "ODD",   0,
+  "EVEN",  0,
+  0
+};
+
+c_str_and_len_t ucm_ss_hash(c_str_and_len_t a)
+{
+  c_str_and_len_t res;
+
+  const char* pa = a.c_str;
+  uint8_t sum = 0;
+  for(size_t i = 0; i < a.len; ++i, ++pa) {
+    sum = (sum ^ a.c_str[i]) * 59;
+  }
+
+  if(sum & 2) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+
+  return res;
+}
+
+const char* ucm_ds_expect[] = {
+  "C0",      0,
+  "EVEN",    0,
+  "ODD",     0,
+  0
+};
+
+c_str_and_len_t ucm_cat(double a)
+{
+  c_str_and_len_t res;
+  if(lround(a) & 1) { res.c_str = "ODD"; res.len = 3; }
+  else { res.c_str = "EVEN"; res.len = 4; }
+  return res;
+}
+
+const char* ucm_sd_expect[] = {
+  "L0_C0", 0,
+  "243",   0,
+  "44",    0,
+  0
+};
+
+double ucm_sd_hash(c_str_and_len_t a)
+{
+  const char* pa = a.c_str;
+  uint8_t sum = 0;
+  for(size_t i = 0; i < a.len; ++i, ++pa) {
+    sum = (sum ^ a.c_str[i]) * 59;
+  }
+  return sum;
+}
+
+int validate_unary_col_modifier()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(ucm_dd_expect);
+    unary_col_modifier m(v);
+    m.add("^C0$", quadruple);
+    generate_numeric_data(m, 1, 3);
+
+    v.init(ucm_ss_expect);
+    unary_c_str_col_modifier sm(v);
+    sm.add("^L0_C0$", ucm_ss_hash);
+    generate_data(sm, 1, 3);
+
+    v.init(ucm_ds_expect);
+    unary_double_c_str_col_modifier dsm(v);
+    dsm.add("^C0$", ucm_cat);
+    generate_numeric_data(dsm, 1, 3);
+
+    v.init(ucm_sd_expect);
+    unary_c_str_double_col_modifier sdm(v);
+    sdm.add("^L0_C0$", ucm_sd_hash);
+    generate_data(sdm, 1, 3);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // unary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -471,6 +571,7 @@ int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
   validate_sorter();
+  validate_unary_col_modifier();
   validate_unary_col_adder();
   validate_binary_col_adder();
   validate_summarizer();
