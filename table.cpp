@@ -63,7 +63,7 @@ static void strreverse(char* begin, char* end)
 
 int dtostr(double value, char* str, int prec)
 {
-  if(std::isnan(value)) { str[0] = '\0'; return 0; }
+  if(isnan(value)) { str[0] = '\0'; return 0; }
   const double thres = (double)(0x7FFFFFFF);
   if(value > thres || value < -thres) { return sprintf(str, "%.6g", value); }
 
@@ -1739,7 +1739,7 @@ void col_pruner::process_token(double token)
   if(first_row) {
     if(!out) throw runtime_error("col_pruner has no out");
   }
-  else if(!std::isnan(token)) {
+  else if(!isnan(token)) {
     if(!(has_data[column / 32] & (1 << (column % 32)))) {
       has_data[column / 32] |= 1 << (column % 32);
       ++columns_with_data;
