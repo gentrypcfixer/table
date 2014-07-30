@@ -972,9 +972,6 @@ struct c_str_and_len_t
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename in_t, typename out_t, typename UnaryOperation> class basic_unary_col_modifier : public pass {
-  static_assert(std::is_same<in_t, double>::value || std::is_same<in_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
-
   struct inst_t
   {
     pcre* regex;
@@ -1022,9 +1019,6 @@ typedef basic_unary_col_modifier<c_str_and_len_t, double, double (*)(c_str_and_l
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename in_t, typename out_t, typename UnaryOperation> class basic_unary_col_adder : public pass {
-  static_assert(std::is_same<in_t, double>::value || std::is_same<in_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
-
   struct inst_t
   {
     pcre* regex;
@@ -1078,10 +1072,6 @@ typedef basic_unary_col_adder<c_str_and_len_t, double, double (*)(c_str_and_len_
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> class basic_binary_col_modifier : public pass {
-  static_assert(std::is_same<in1_t, double>::value || std::is_same<in1_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<in2_t, double>::value || std::is_same<in2_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
-
   struct inst_t
   {
     pcre* regex;
@@ -1139,10 +1129,6 @@ typedef basic_binary_col_modifier<c_str_and_len_t, c_str_and_len_t, double, doub
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> class basic_binary_col_adder : public pass {
-  static_assert(std::is_same<in1_t, double>::value || std::is_same<in1_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<in2_t, double>::value || std::is_same<in2_t, c_str_and_len_t>::value, "unsuported type");
-  static_assert(std::is_same<out_t, double>::value || std::is_same<out_t, c_str_and_len_t>::value, "unsuported type");
-
   struct inst_t
   {
     pcre* regex;
@@ -1206,7 +1192,7 @@ typedef basic_binary_col_adder<c_str_and_len_t, c_str_and_len_t, double, double 
 #include <stdexcept>
 #include <sstream>
 #include <limits>
-#include <type_traits>
+#include <typeinfo>
 #include <math.h>
 #include <stdio.h>
 
@@ -1453,7 +1439,7 @@ void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_token(const cha
   else {
     if(ci != columns.end() && column == (*ci).col) {
       col_t& c = *ci;
-      if(is_same<in_t, double>::value) {
+      if(typeid(in_t) == typeid(double)) {
         char* next; c.double_val = strtod(token, &next);
         if(next == token) c.double_val = numeric_limits<double>::quiet_NaN();
       }
@@ -1483,7 +1469,7 @@ void basic_unary_col_adder<in_t, out_t, UnaryOperation>::process_token(double to
 
   if(ci != columns.end() && column == (*ci).col) {
     col_t& c = *ci;
-    if(is_same<in_t, double>::value) { c.double_val = token; }
+    if(typeid(in_t) == typeid(double)) { c.double_val = token; }
     else {
       if(!c.c_str_val.c_str || c.c_str_val.c_str + 32 > c.c_str_end) {
         c.c_str_val.c_str = new char[32];
@@ -1703,14 +1689,14 @@ void basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::process_li
             throw runtime_error(msg.str());
           }
 
-          col_info_t i; i.need_double = 0; i.need_c_str = 0; i.passthrough = 1;
+          col_info_t i; i.index = numeric_limits<size_t>::max(); i.need_double = 0; i.need_c_str = 0; i.passthrough = 1;
           col_info_t* p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);
-          if(is_same<in1_t, double>::value) p->need_double = 1;
+          if(typeid(in1_t) == typeid(double)) p->need_double = 1;
           else p->need_c_str = 1;
           p->passthrough = 0;
 
           p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(other_col, i)).first).second);
-          if(is_same<in2_t, double>::value) p->need_double = 1;
+          if(typeid(in2_t) == typeid(double)) p->need_double = 1;
           else p->need_c_str = 1;
 
           new_col_info_t& nci = new_cols[column];
@@ -1948,13 +1934,13 @@ void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_line(
             throw runtime_error(msg.str());
           }
 
-          col_info_t i; i.need_double = 0; i.need_c_str = 0;
+          col_info_t i; i.index = numeric_limits<size_t>::max(); i.need_double = 0; i.need_c_str = 0;
           col_info_t* p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);
-          if(is_same<in1_t, double>::value) p->need_double = 1;
+          if(typeid(in1_t) == typeid(double)) p->need_double = 1;
           else p->need_c_str = 1;
 
           p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(other_col, i)).first).second);
-          if(is_same<in2_t, double>::value) p->need_double = 1;
+          if(typeid(in2_t) == typeid(double)) p->need_double = 1;
           else p->need_c_str = 1;
 
           vector<new_col_info_t>& nciv = new_cols[column];
