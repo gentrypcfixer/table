@@ -28,7 +28,7 @@ LDFLAGS = -L$(LIB_DIR) -lpcre -lpthread $(LDFLAGS_$(OS)) $(EXTRA_LDFLAGS)
 AR = ar
 ARFLAGS = rcs
 
-PROGS = table_stack table_test table_reg_test
+PROGS = table_stack table_col_adder table_test table_reg_test
 
 .PHONY : all release debug clean install
 
@@ -71,6 +71,8 @@ table_stack.o : table.h
 table_stack_debug.o : table.h
 table_split.o : table.h
 table_split_debug.o : table.h
+table_col_adder.o : table.h
+table_col_adder_debug.o : table.h
 table_test.o : table.h
 table_test_debug.o : table.h
 table_reg_test.o : table.h
@@ -83,6 +85,8 @@ table_stack : libtable.a
 table_stack_debug : libtable_debug.a
 table_split : libtable.a
 table_split_debug : libtable_debug.a
+table_col_adder : libtable.a
+table_col_adder_debug : libtable_debug.a
 table_test : libtable.a
 table_test_debug : libtable_debug.a
 table_reg_test : libtable.a

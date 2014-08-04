@@ -390,6 +390,13 @@ double uca_sd_hash(c_str_and_len_t a)
   return sum;
 }
 
+const char* uca_sub_expect[] = {
+  "L0_C0", "L0_C1", 0,
+  "L1_C0", "L1_C1", 0,
+  "L2_C0", "L2_C1", 0,
+  0
+};
+
 int validate_unary_col_adder()
 {
   int ret_val = 0;
@@ -414,6 +421,12 @@ int validate_unary_col_adder()
     unary_c_str_double_col_adder sda(v);
     sda.add("^L0_C0$", "sd_hash", uca_sd_hash);
     generate_data(sda, 1, 3);
+
+    v.init(uca_sub_expect);
+    substituter sub("L(\\d+)_C0", "L\\1_C1");
+    basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, substituter> suba(v);
+    suba.add("^L0_C0$", "L0_C1", sub);
+    generate_data(suba, 1, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }

@@ -5,6 +5,8 @@
 *.exe
 table_stack
 table_stack_debug
+table_col_adder
+table_col_adder_debug
 table_test
 table_test_debug
 table_reg_test
