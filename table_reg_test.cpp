@@ -424,7 +424,7 @@ int validate_unary_col_adder()
 
     v.init(uca_sub_expect);
     substituter sub("L(\\d+)_C0", "L\\1_C1");
-    basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, substituter> suba(v);
+    substitute_col_adder suba(v);
     suba.add("^L0_C0$", "L0_C1", sub);
     generate_data(suba, 1, 3);
   }

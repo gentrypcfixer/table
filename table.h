@@ -949,6 +949,7 @@ typedef basic_unary_col_modifier<double, double, double (*)(double)> unary_col_m
 typedef basic_unary_col_modifier<c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> unary_c_str_col_modifier;
 typedef basic_unary_col_modifier<double, c_str_and_len_t, c_str_and_len_t (*)(double)> unary_double_c_str_col_modifier;
 typedef basic_unary_col_modifier<c_str_and_len_t, double, double (*)(c_str_and_len_t)> unary_c_str_double_col_modifier;
+typedef basic_unary_col_modifier<c_str_and_len_t, c_str_and_len_t, substituter> substitute_col_modifier;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1002,6 +1003,7 @@ typedef basic_unary_col_adder<double, double, double (*)(double)> unary_col_adde
 typedef basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> unary_c_str_col_adder;
 typedef basic_unary_col_adder<double, c_str_and_len_t, c_str_and_len_t (*)(double)> unary_double_c_str_col_adder;
 typedef basic_unary_col_adder<c_str_and_len_t, double, double (*)(c_str_and_len_t)> unary_c_str_double_col_adder;
+typedef basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, substituter> substitute_col_adder;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
