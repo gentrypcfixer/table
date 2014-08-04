@@ -1716,9 +1716,9 @@ void substituter::init(const char* from, const char* to)
       pcre_free_study(data->from_extra);
       pcre_free(data->from);
     }
-    else { --data->rc; data = new data_t; data->buf = new char[2048]; data->end = data->buf + 2048; }
+    else { --data->rc; data = new data_t; data->buf = new char[2048]; data->end = data->buf + 2048; data->rc = 1; }
   }
-  else { data = new data_t; data->buf = new char[2048]; data->end = data->buf + 2048; }
+  else { data = new data_t; data->buf = new char[2048]; data->end = data->buf + 2048; data->rc = 1; }
 
   const char* err; int err_off;
   data->from = pcre_compile(from, 0, &err, &err_off, 0);

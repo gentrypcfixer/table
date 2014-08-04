@@ -917,7 +917,7 @@ template<typename in_t, typename out_t, typename UnaryOperation> class basic_una
   pass* out;
   std::vector<inst_t> insts;
   bool first_row;
-  int column;
+  size_t column;
   std::vector<col_t> columns;
   typename std::vector<col_t>::iterator ci;
 
