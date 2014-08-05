@@ -682,6 +682,43 @@ int validate_summarizer()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// range_stacker
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* range_stacker_expect[] = {
+  "C0", "X", "Y", 0,
+  "0",  "1", "3", 0,
+  "0",  "1", "4", 0,
+  "0",  "2", "3", 0,
+  "0",  "2", "4", 0,
+  "5",  "6", "8", 0,
+  "5",  "6", "9", 0,
+  "5",  "7", "8", 0,
+  "5",  "7", "9", 0,
+  0
+};
+
+int validate_range_stacker()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(range_stacker_expect);
+
+    range_stacker s(v);
+    s.add("C1", "C2", "X");
+    s.add("C3", "C4", "Y");
+
+    generate_numeric_data(s, 5, 3);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -694,6 +731,7 @@ int main(int argc, char * argv[])
   validate_binary_col_modifier();
   validate_binary_col_adder();
   validate_summarizer();
+  validate_range_stacker();
 
   return ret_val;
 }

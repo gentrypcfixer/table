@@ -413,71 +413,177 @@ void summarizer::process_stream()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// differ
+// range_stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-differ::differ() : out(0) {}
-differ::differ(pass& out, const char* base_key, const char* comp_key, const char* keyword) { init(out, base_key, comp_key, keyword); }
-differ::~differ() {}
+range_stacker::range_stacker() { init(); }
+range_stacker::range_stacker(pass& out) { init(out); }
 
-void differ::init(pass& out, const char* base_key, const char* comp_key, const char* keyword)
+range_stacker::~range_stacker()
 {
-  if(base_key < 0) throw runtime_error("invalid base_key");
-  if(comp_key < 0) throw runtime_error("invalid comp_key");
-  if(keyword < 0) throw runtime_error("invalid keyword");
-
-  this->out = &out;
-  this->base_key = base_key;
-  this->comp_key = comp_key;
-  this->keyword = keyword;
-  first_row = 1;
-  base_column = -1;
-  comp_column = -1;
-  column = 0;
-  blank = 0;
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
 }
 
-void differ::process_token(const char* token, size_t len)
+range_stacker& range_stacker::init()
+{
+  this->out = 0;
+  ranges.clear();
+  first_row = 1;
+  column = 0;
+  columns.clear();
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
+  leave_tokens.clear();
+  leave_tokens_index = 0;
+  leave_tokens_next = 0;
+  return *this;
+}
+
+range_stacker& range_stacker::init(pass& out) { init(); return set_out(out); }
+range_stacker& range_stacker::set_out(pass& out) { this->out = &out; return *this; }
+
+range_stacker& range_stacker::add(const char* start, const char* stop, const char* new_name)
+{
+  ranges.resize(ranges.size() + 1);
+  ranges.back().start_name = start;
+  ranges.back().start_col_index = numeric_limits<size_t>::max();
+  ranges.back().stop_name = stop;
+  ranges.back().stop_col_index = numeric_limits<size_t>::max();
+  ranges.back().new_col_name = new_name;
+  return *this;
+}
+
+void range_stacker::process_token(const char* token, size_t len)
 {
   if(first_row) {
-    if(!out) throw runtime_error("differ has no out");
-    if(token == base_key) base_column = column;
-    else if(token == comp_key) comp_column = column;
+    if(!out) throw runtime_error("stacker has no out");
+
+    int match = 0;
+    for(vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
+      if(!(*i).start_name.compare(token)) { match = 1; (*i).start_col_index = columns.size(); }
+      else if(!(*i).stop_name.compare(token)) { match = 1; (*i).stop_col_index = columns.size(); }
+    }
+    if(match) {
+      columns.resize(columns.size() + 1);
+      columns.back().col = column;
+    }
+    else out->process_token(token, len);
   }
   else {
-    if(column == base_column) { char* next = 0; base_value = strtod(token, &next); if(next == token || *next) blank = 1; }
-    else if(column == comp_column) { char* next = 0; comp_value = strtod(token, &next); if(next == token || *next) blank = 1; }
+    if(ci != columns.end() && (*ci).col == column) {
+      char* next = 0; (*ci).val = strtod(token, &next);
+      if(next == token) (*ci).val = numeric_limits<double>::quiet_NaN();
+      ++ci;
+    }
+    else {
+      if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second) {
+        if(leave_tokens_next) { *leave_tokens_next++ = '\x03'; ++leave_tokens_index; }
+        if(leave_tokens_index < leave_tokens.size()) {
+          size_t cap = size_t(leave_tokens[leave_tokens_index].second - leave_tokens_next);
+          if(cap < len + 2) {
+            cap = len + 2;
+            delete[] leave_tokens[leave_tokens_index].first;
+            leave_tokens[leave_tokens_index].first = new char[cap];
+            leave_tokens[leave_tokens_index].second = leave_tokens[leave_tokens_index].first + cap;
+          }
+        }
+        else {
+          size_t cap = 256 * 1024;
+          if(cap < len + 2) cap = len + 2;
+          char* p = new char[cap];
+          leave_tokens.push_back(pair<char*, char*>(p, p + cap));
+        }
+        leave_tokens_next = leave_tokens[leave_tokens_index].first;
+      }
+      memcpy(leave_tokens_next, token, len + 1);
+      leave_tokens_next += len + 1;
+    }
   }
-  out->process_token(token, len);
 
   ++column;
 }
 
-void differ::process_line()
+void range_stacker::process_token(double token)
 {
-  if(first_row) {
-    if(!out) throw runtime_error("differ has no out");
-    if(base_column < 0) throw runtime_error("differ couldn't find the base column");
-    if(comp_column < 0) throw runtime_error("differ couldn't find the comp column");
-    out->process_token(keyword.c_str(), keyword.size());
-    first_row = 0;
+  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
+
+  if(ci != columns.end() && (*ci).col == column) {
+    (*ci).val = token;
+    ++ci;
   }
   else {
-    if(blank) out->process_token("", 0);
-    else {
-      char buf[32];
-      int len = sprintf(buf, "%.6g", comp_value - base_value);
-      out->process_token(buf, len);
+    if(!leave_tokens_next || leave_tokens_next + sizeof(double) + 2 > leave_tokens[leave_tokens_index].second) {
+      if(leave_tokens_next) { *leave_tokens_next++ = '\x03'; ++leave_tokens_index; }
+      if(leave_tokens_index >= leave_tokens.size()) {
+        size_t cap = 256 * 1024;
+        char* p = new char[cap];
+        leave_tokens.push_back(pair<char*, char*>(p, p + cap));
+      }
+      leave_tokens_next = leave_tokens[leave_tokens_index].first;
     }
+    *leave_tokens_next++ = '\x01';
+    memcpy(leave_tokens_next, &token, sizeof(double));
+    leave_tokens_next += sizeof(double);
   }
-  out->process_line();
-  column = 0;
-  blank = 0;
+
+  ++column;
 }
 
-void differ::process_stream()
+void range_stacker::process_line() {
+  if(first_row) {
+    if(!out) throw runtime_error("range_stacker has no out");
+    first_row = 0;
+    for(vector<range_t>::const_iterator i = ranges.begin(); i != ranges.end(); ++i) {
+      if((*i).start_col_index >= column) throw runtime_error("range_stacker missing start");
+      else if((*i).stop_col_index >= column) throw runtime_error("range_stacker missing stop");
+      out->process_token((*i).new_col_name.c_str(), (*i).new_col_name.size());
+    }
+    out->process_line();
+  }
+  else {
+    *leave_tokens_next++ = '\x04';
+    bool done = 1;
+    for(vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
+      (*i).cur_val = columns[(*i).start_col_index].val;
+
+      if((*i).cur_val <= columns[(*i).stop_col_index].val) done = 0;
+      else (*i).cur_val = numeric_limits<double>::quiet_NaN();
+    }
+    while(!done) {
+      vector<pair<char*, char*> >::iterator lti = leave_tokens.begin();
+      if(lti != leave_tokens.end()) {
+        for(char* ltp = (*lti).first; 1;) {
+          if(*ltp == '\x01') { out->process_token(*reinterpret_cast<double*>(++ltp)); ltp += sizeof(double); }
+          else if(*ltp == '\x03') ltp = (*++lti).first;
+          else if(*ltp == '\x04') break;
+          else { size_t len = strlen(ltp); out->process_token(ltp, len); ltp += len + 1; }
+        }
+      }
+      for(vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i)
+        out->process_token((*i).cur_val);
+      out->process_line();
+
+      done = 1;
+      for(vector<range_t>::reverse_iterator i = ranges.rbegin(); i != ranges.rend(); ++i) {
+        if(isnan((*i).cur_val)) continue;
+        (*i).cur_val += 1.0;
+        if((*i).cur_val > columns[(*i).stop_col_index].val) (*i).cur_val = columns[(*i).start_col_index].val;
+        else { done = 0; break; }
+      }
+    }
+  }
+
+  column = 0;
+  ci = columns.begin();
+  leave_tokens_index = 0;
+  leave_tokens_next = 0;
+}
+
+void range_stacker::process_stream()
 {
-  if(!out) throw runtime_error("differ has no out");
+  if(!out) throw runtime_error("range_stacker has no out");
+  for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
+  leave_tokens.clear();
+  columns.clear();
   out->process_stream();
 }
 

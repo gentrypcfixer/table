@@ -764,33 +764,46 @@ public:
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// differ
+// range_stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class differ : public pass {
+class range_stacker : public pass {
+  struct range_t
+  {
+    std::string start_name;
+    size_t start_col_index;
+    std::string stop_name;
+    size_t stop_col_index;
+    std::string new_col_name;
+    double cur_val;
+  };
+
+  struct col_t { size_t col; double val; };
+
   pass* out;
-  std::string base_key;
-  std::string comp_key;
-  std::string keyword;
+  std::vector<range_t> ranges;
   bool first_row;
-  int base_column;
-  int comp_column;
+  size_t column;
+  std::vector<col_t> columns;
+  std::vector<col_t>::iterator ci;
+  std::vector<std::pair<char*, char*> > leave_tokens;
+  size_t leave_tokens_index;
+  char* leave_tokens_next;
 
-  int column;
-  bool blank;
-  double base_value;
-  double comp_value;
-
-  differ(const differ& other);
-  differ& operator=(const differ& other);
+  range_stacker(const range_stacker& other);
+  range_stacker& operator=(const range_stacker& other);
 
 public:
-  differ();
-  differ(pass& out, const char* base_key, const char* comp_key, const char* keyword);
-  ~differ();
-  void init(pass& out, const char* base_key, const char* comp_key, const char* keyword);
+  range_stacker();
+  range_stacker(pass& out);
+  ~range_stacker();
+  range_stacker& init();
+  range_stacker& init(pass& out);
+  range_stacker& set_out(pass& out);
+  range_stacker& add(const char* start, const char* stop, const char* new_name);
 
   void process_token(const char* token, size_t len);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };

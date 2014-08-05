@@ -647,7 +647,7 @@ void stacker::process_token(const char* token, size_t len)
             process_out_line(stp, len);
             stp += len + 1;
             ++stack_column;
-            if(*stp == '\x03') (*++sti).first;
+            if(*stp == '\x03') stp = (*++sti).first;
             else if(*stp == '\x04') break;
           }
         }
