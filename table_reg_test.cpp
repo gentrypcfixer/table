@@ -652,10 +652,23 @@ int validate_binary_col_adder()
 // summarizer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+const char* summarizer_input[] = {
+  "C0", "C1", "C2",  0,
+  "0",  "1",  "2",   0,
+  "0",  "4",  "5",   0,
+  "0",  "4",  "7",   0,
+  "1",  "7",  "8",   0,
+  "1",  "7",  "",    0,
+  "1",  "10", "11",  0,
+  0
+};
+
 const char* summarizer_expect[] = {
-  "C0", "C1", "COUNT(C2)", "MAX(C2)", "MISSING(C3)", "COUNT(C3)",  0,
-  "0",  "1",          "1",       "2",           "0",         "1",  0,
-  "4",  "5",          "1",       "6",           "0",         "1",  0,
+  "C0", "C1", "COUNT(C1)", "MISSING(C2)", "COUNT(C2)", "MAX(C2)",  0,
+  "0",  "1",          "1",           "0",         "1",       "2",  0,
+  "0",  "4",          "2",           "0",         "2",       "7",  0,
+  "1",  "7",          "2",           "1",         "1",       "8",  0,
+  "1",  "10",         "1",           "0",         "1",      "11",  0,
   0
 };
 
@@ -669,10 +682,10 @@ int validate_summarizer()
     summarizer su(v);
     su.add_group("^C0$", 1);
     su.add_group("^C1$");
-    su.add_data("^C2$", SUM_COUNT | SUM_MAX);
-    su.add_data("^C3$", SUM_COUNT | SUM_MISSING);
+    su.add_data("^C1$", SUM_COUNT);
+    su.add_data("^C2$", SUM_MISSING | SUM_COUNT | SUM_MAX);
 
-    generate_numeric_data(su, 4, 3);
+    feed_data(su, summarizer_input);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
