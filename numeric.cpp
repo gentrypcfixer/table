@@ -145,9 +145,10 @@ void summarizer::print_data()
       }
       ++d;
     }
-    if((++row % data_rows_per_storage) == (data_rows_per_storage - 1)) {
+    if((row % data_rows_per_storage) == (data_rows_per_storage - 1)) {
       delete[] *dsi; ++dsi; d = (dsi == data_storage.end()) ? 0 : *dsi;
     }
+    ++row;
 
     out->process_line();
   }
