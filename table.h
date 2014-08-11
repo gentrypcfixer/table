@@ -286,20 +286,17 @@ enum split_action_e
   SP_REMOVE
 };
 
-struct regex_split_action_t
-{
-  pcre* regex;
-  split_action_e action;
-
-  regex_split_action_t() : regex(0) {}
-  ~regex_split_action_t() { pcre_free(regex); }
-};
-
 class splitter : public pass {
+  struct regex_action_t
+  {
+    pcre* regex;
+    split_action_e action;
+  };
+
   pass* out;
   split_action_e default_action;
   std::map<std::string, split_action_e> keyword_actions;
-  std::vector<regex_split_action_t> regex_actions;
+  std::vector<regex_action_t> regex_actions;
 
   bool first_line;
   std::vector<split_action_e> actions;
@@ -330,10 +327,9 @@ class splitter : public pass {
 public:
   splitter(split_action_e default_action);
   splitter(pass& out, split_action_e default_action);
+  ~splitter();
   splitter& init(split_action_e default_action);
   splitter& init(pass& out, split_action_e default_action);
-  ~splitter();
-
   splitter& set_out(pass& out);
   splitter& add_action(bool regex, const char* key, split_action_e action);
 

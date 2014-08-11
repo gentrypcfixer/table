@@ -181,6 +181,56 @@ int validate_stacker()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// splitter
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* splitter_input[] = {
+  "C0", "C1", "C2", "C3", "C4", "C5", 0,
+  "0",  "2",  "10", "12", "20", "28", 0,
+  "0",  "2",  "10", "13", "21", "29", 0,
+  "0",  "3",  "11", "12", "22", "30", 0,
+  "0",  "3",  "11", "13", "23", "31", 0,
+  "1",  "2",  "10", "12", "24", "32", 0,
+  "1",  "2",  "10", "13", "25", "33", 0,
+  "1",  "3",  "11", "12", "26", "34", 0,
+  "1",  "3",  "11", "13", "27", "35", 0,
+  0
+};
+
+const char* splitter_expect[] = {
+  "C0", "C1", "C4 10 12", "C5 10 12", "C4 10 13",  "C5 10 13", "C4 11 12", "C5 11 12", "C4 11 13", "C5 11 13", 0,
+  "1",  "2",  "24",       "32",       "25",        "33",       "",         "",         "",         "",         0,
+  "0",  "3",  "",         "",         "",          "",         "22",       "30",       "23",       "31",       0,
+  "1",  "3",  "",         "",         "",          "",         "26",       "34",       "27",       "35",       0,
+  "0",  "2",  "20",       "28",       "21",        "29",       "",         "",         "",         "",         0,
+  0
+};
+
+int validate_splitter()
+{
+  int ret_val = 0;
+
+  try {
+    simple_validater v(splitter_expect);
+
+    splitter s(v, SP_REMOVE);
+    s.add_action(0, "C0", SP_GROUP);
+    s.add_action(0, "C1", SP_GROUP);
+    s.add_action(0, "C2", SP_SPLIT_BY);
+    s.add_action(0, "C3", SP_SPLIT_BY);
+    s.add_action(0, "C4", SP_SPLIT);
+    s.add_action(0, "C5", SP_SPLIT);
+
+    feed_data(s, splitter_input);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // sorter
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -738,6 +788,7 @@ int validate_range_stacker()
 int main(int argc, char * argv[])
 {
   int ret_val = validate_stacker();
+  validate_splitter();
   validate_sorter();
   validate_unary_col_modifier();
   validate_unary_col_adder();

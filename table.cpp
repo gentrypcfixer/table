@@ -699,6 +699,17 @@ void stacker::process_stream()
 splitter::splitter(split_action_e default_action) : group_tokens(0), split_by_tokens(0), split_tokens(0) { init(default_action); }
 splitter::splitter(pass& out, split_action_e default_action) : group_tokens(0), split_by_tokens(0), split_tokens(0)  { init(out, default_action); }
 
+splitter::~splitter()
+{
+  for(vector<regex_action_t>::const_iterator i = regex_actions.begin(); i != regex_actions.end(); ++i) pcre_free((*i).regex);
+  delete[] group_tokens;
+  delete[] split_by_tokens;
+  delete[] split_tokens;
+  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i) delete[] (*i).first;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
+}
+
+
 splitter& splitter::init(split_action_e default_action)
 {
   this->out = 0;
@@ -707,6 +718,7 @@ splitter& splitter::init(split_action_e default_action)
   regex_actions.clear();
 
   first_line = 1;
+  for(vector<regex_action_t>::const_iterator i = regex_actions.begin(); i != regex_actions.end(); ++i) pcre_free((*i).regex);
   actions.clear();
   split_keys.clear();
 
@@ -724,10 +736,8 @@ splitter& splitter::init(split_action_e default_action)
   split_tokens_next = split_tokens;
   split_tokens_end = split_tokens + 2048;
 
-  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
-    delete[] (*i).first;
-  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
-    delete[] *i;
+  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i) delete[] (*i).first;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
   group_storage_next = 0;
   group_storage_end = 0;
   out_split_keys.clear();
@@ -737,18 +747,6 @@ splitter& splitter::init(split_action_e default_action)
 }
 
 splitter& splitter::init(pass& out, split_action_e default_action) { init(default_action); return set_out(out); }
-
-splitter::~splitter()
-{
-  delete[] group_tokens;
-  delete[] split_by_tokens;
-  delete[] split_tokens;
-  for(map<char*, size_t, cstr_less>::const_iterator i = out_split_keys.begin(); i != out_split_keys.end(); ++i)
-    delete[] (*i).first;
-  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
-    delete[] *i;
-}
-
 splitter& splitter::set_out(pass& out) { this->out = &out; return *this; }
 
 splitter& splitter::add_action(bool regex, const char* key, split_action_e action)
@@ -773,7 +771,7 @@ void splitter::process_token(const char* token, size_t len)
     map<string, split_action_e>::iterator i = keyword_actions.find(token);
     if(i != keyword_actions.end()) action = (*i).second;
     else {
-      for(vector<regex_split_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
+      for(vector<regex_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
         int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
         if(rc >= 0) { action = (*j).action; break; }
         else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("splitter match error");
@@ -841,16 +839,14 @@ void splitter::process_line()
         if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
         *group_tokens_next++ = *p;
       }
-      *group_tokens_next++ = ' ';
-      size_t sk_len = group_tokens_next - group_tokens;
       for(char* sbtp = split_by_tokens; *sbtp != '\x03'; ++sbtp) {
-        group_tokens_next = group_tokens + sk_len;
-        for(; 1; ++sbtp) {
+        *group_tokens_next++ = ' ';
+        while(*sbtp) {
           if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-          *group_tokens_next++ = *sbtp;
-          if(!*sbtp) break;
+          *group_tokens_next++ = *sbtp++;
         }
       }
+      *group_tokens_next++ = '\0';
 
       map<char*, size_t, cstr_less>::iterator i = out_split_keys.find(group_tokens);
       if(i == out_split_keys.end()) {
@@ -906,8 +902,7 @@ void splitter::process_stream()
     out->process_line();
   }
 
-  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i)
-    delete[] *i;
+  for(vector<char*>::const_iterator i = group_storage.begin(); i != group_storage.end(); ++i) delete[] *i;
   group_storage.clear();
   data.clear();
 
