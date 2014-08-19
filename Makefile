@@ -51,7 +51,6 @@ install :
 
 % : %.o
 	$(CXX) $+ $(LDFLAGS) -o $@
-	chmod 755 $@
 
 lib%.a : %.o
 	$(AR) $(ARFLAGS) $@ $+
