@@ -386,128 +386,23 @@ int validate_unary_col_adder()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
-// binary_col_modifier
+// binary_col_adder
 ////////////////////////////////////////////////////////////////////////////////////////////////
-
-const char* bcm_dd_expect[] = {
-  "C0T", "C1T", 0,
-  "1",   "0",   0,
-  "5",   "6",   0,
-  0
-};
 
 double sum(double a, double b) { return a + b; }
 double mult(double a, double b) { return a * b; }
 
-const char* bcm_ss_expect[] = {
-  "L0_C1", "L0_C0T", 0,
-  "L1_C1", "EVEN",   0,
-  "L2_C1", "ODD",    0,
-  0
-};
-
-c_str_and_len_t bcm_ss_hash(c_str_and_len_t a, c_str_and_len_t b)
-{
-  c_str_and_len_t res;
-
-  const char* pa = a.c_str;
-  const char* pb = b.c_str;
-  size_t len = min(a.len, b.len);
-  uint8_t sum = 0;
-  for(size_t i = 0; i < len; ++i, ++pa, ++pb) {
-    sum = (sum ^ a.c_str[i]) * 59;
-    sum = (sum ^ b.c_str[i]) * 59;
-  }
-
-  if(sum & 2) { res.c_str = "ODD"; res.len = 3; }
-  else { res.c_str = "EVEN"; res.len = 4; }
-
-  return res;
-}
-
-const char* bcm_ds_expect[] = {
-  "C1", "C0T",  0,
-  "1",  "EVEN", 0,
-  "3",  "ODD",  0,
-  0
-};
-
-c_str_and_len_t bcm_cat(double a, double b)
-{
-  c_str_and_len_t res;
-  if(lround(a + b) & 4) { res.c_str = "ODD"; res.len = 3; }
-  else { res.c_str = "EVEN"; res.len = 4; }
-  return res;
-}
-
-const char* bcm_sd_expect[] = {
-  "L0_C1", "L0_C0T", 0,
-  "L1_C1", "213",    0,
-  "L2_C1", "211",    0,
-  0
-};
-
-double bcm_sd_hash(c_str_and_len_t a, c_str_and_len_t b)
-{
-  const char* pa = a.c_str;
-  const char* pb = b.c_str;
-  size_t len = min(a.len, b.len);
-  uint8_t sum = 0;
-  for(size_t i = 0; i < len; ++i, ++pa, ++pb) {
-    sum = (sum ^ a.c_str[i]) * 59;
-    sum = (sum ^ b.c_str[i]) * 59;
-  }
-  return sum;
-}
-
-int validate_binary_col_modifier()
-{
-  int ret_val = 0;
-
-  try {
-    simple_validater v(bcm_dd_expect);
-    binary_col_modifier m(v);
-    m.add("^C0$", "C1", "\\0T", sum);
-    m.add("^C1$", "C0", "\\0T", mult);
-    generate_numeric_data(m, 2, 3);
-
-    v.init(bcm_ss_expect);
-    binary_c_str_col_modifier sm(v);
-    sm.add("^L0_C0$", "L0_C1", "\\0T", bcm_ss_hash);
-    generate_data(sm, 2, 3);
-
-    v.init(bcm_ds_expect);
-    binary_double_c_str_col_modifier dsm(v);
-    dsm.add("^C0$", "C1", "\\0T", bcm_cat);
-    generate_numeric_data(dsm, 2, 3);
-
-    v.init(bcm_sd_expect);
-    binary_c_str_double_col_modifier sdm(v);
-    sdm.add("^L0_C0$", "L0_C1", "\\0T", bcm_sd_hash);
-    generate_data(sdm, 2, 3);
-  }
-  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
-  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
-  
-  return ret_val;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-// binary_col_adder
-////////////////////////////////////////////////////////////////////////////////////////////////
-
 const char* bca_dd_expect[] = {
-  "C0", "C1", "C0sum", "mult",  0,
-  "0",  "1",  "1",     "0",     0,
-  "2",  "3",  "5",     "6",     0,
+  "C0", "C0sum", "mult",  0,
+  "0",  "1",     "0",     0,
+  "2",  "5",     "6",     0,
   0
 };
 
 const char* bca_ss_expect[] = {
-  "L0_C0", "L0_C1", "ss_hash", 0,
-  "L1_C0", "L1_C1", "EVEN",    0,
-  "L2_C0", "L2_C1", "ODD",     0,
+  "L0_C0", "ss_hash", 0,
+  "L1_C0", "EVEN",    0,
+  "L2_C0", "ODD",     0,
   0
 };
 
@@ -573,12 +468,12 @@ int validate_binary_col_adder()
     simple_validater v(bca_dd_expect);
     binary_col_adder a(v);
     a.add("^C0$", "C1", "\\0sum", sum);
-    a.add("^C1$", "C0", "mult", mult);
+    a.add("^C1$", "C0", "mult", mult, 1, 0);
     generate_numeric_data(a, 2, 3);
 
     v.init(bca_ss_expect);
     binary_c_str_col_adder sa(v);
-    sa.add("^L0_C0$", "L0_C1", "ss_hash", bca_ss_hash);
+    sa.add("^L0_C0$", "L0_C1", "ss_hash", bca_ss_hash, 0, 1);
     generate_data(sa, 2, 3);
 
     v.init(bca_ds_expect);
@@ -691,7 +586,6 @@ int main(int argc, char * argv[])
   validate_splitter();
   validate_sorter();
   validate_unary_col_adder();
-  validate_binary_col_modifier();
   validate_binary_col_adder();
   validate_summarizer();
   validate_range_stacker();
