@@ -118,7 +118,7 @@ int main(int argc, char * argv[])
     //ua.add("BIN_OM_INIT_GOOD_MBLKS_PLANE0", "\\0_FILTER", filter);
 
     binary_col_modifier bm(w);
-    bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", calc);
+    bm.add("NPT\\d+", "MIN_DAC_VOLTAGE", "\\0", calc);
 
     //variance_analyzer a(w);
     //a.add_group("^LOT$");

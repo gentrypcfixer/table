@@ -918,6 +918,7 @@ template<typename in_t, typename out_t, typename UnaryOperation> class basic_una
   struct inst_t
   {
     pcre* regex;
+    std::string new_key;
     UnaryOperation unary_op;
   };
 
@@ -927,6 +928,8 @@ template<typename in_t, typename out_t, typename UnaryOperation> class basic_una
   std::vector<inst_t> insts;
   bool first_row;
   size_t column;
+  char* buf;
+  char* end;
   std::vector<col_t> columns;
   typename std::vector<col_t>::iterator ci;
 
@@ -946,7 +949,7 @@ public:
   basic_unary_col_modifier& init();
   basic_unary_col_modifier& init(pass& out);
   basic_unary_col_modifier& set_out(pass& out);
-  basic_unary_col_modifier& add(const char* regex, const UnaryOperation& unary_op);
+  basic_unary_col_modifier& add(const char* regex, const char* new_key, const UnaryOperation& unary_op);
 
   void process_token(const char* token, size_t len);
   void process_token(double token);
@@ -1024,11 +1027,12 @@ template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperatio
   {
     pcre* regex;
     std::string other_key;
+    std::string new_key;
     BinaryOperation binary_op;
   };
 
   struct col_info_t { size_t index; bool need_double; bool need_c_str; bool passthrough; };
-  struct new_col_info_t { size_t other_col; BinaryOperation* binary_op; };
+  struct new_col_info_t { size_t other_col; std::string new_key; BinaryOperation* binary_op; };
   struct col_t { size_t col; bool need_double; double double_val; bool need_c_str; c_str_and_len_t c_str_val; const char* c_str_end; bool passthrough; };
   struct new_col_t { size_t col_index; size_t other_col_index; BinaryOperation binary_op; };
 
@@ -1058,7 +1062,7 @@ public:
   basic_binary_col_modifier& init();
   basic_binary_col_modifier& init(pass& out);
   basic_binary_col_modifier& set_out(pass& out);
-  basic_binary_col_modifier& add(const char* regex, const char* other_key, const BinaryOperation& binary_op);
+  basic_binary_col_modifier& add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op);
 
   void process_token(const char* token, size_t len);
   void process_token(double token);
@@ -1194,13 +1198,14 @@ inline void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_new_c
   out->process_token(val);
 }
 
-template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier() { init(); }
-template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier(pass& out) { init(out); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier() : buf(0) { init(); }
+template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>::basic_unary_col_modifier(pass& out) : buf(0) { init(out); }
 
 template<typename in_t, typename out_t, typename UnaryOperation>
 basic_unary_col_modifier<in_t, out_t, UnaryOperation>::~basic_unary_col_modifier()
 {
   for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex);
+  delete[] buf;
 }
 
 template<typename in_t, typename out_t, typename UnaryOperation>
@@ -1211,6 +1216,8 @@ basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<
   insts.clear();
   first_row = 1;
   column = 0;
+  delete[] buf; buf = new char[2048];
+  end = buf + 2048;
   columns.clear();
   return *this;
 }
@@ -1219,12 +1226,13 @@ template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col
 template<typename in_t, typename out_t, typename UnaryOperation> basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
 
 template<typename in_t, typename out_t, typename UnaryOperation>
-basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::add(const char* regex, const UnaryOperation& unary_op)
+basic_unary_col_modifier<in_t, out_t, UnaryOperation>& basic_unary_col_modifier<in_t, out_t, UnaryOperation>::add(const char* regex, const char* new_key, const UnaryOperation& unary_op)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("basic_unary_col_modifier can't compile regex");
   insts.resize(insts.size() + 1);
   insts.back().regex = p;
+  insts.back().new_key = new_key;
   insts.back().unary_op = unary_op;
   return *this;
 }
@@ -1234,6 +1242,7 @@ void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_token(const 
 {
   if(first_row) {
     if(!out) throw runtime_error("basic_unary_col_modifier has no out");
+    bool matched = 0;
     for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) {
       int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
       if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_unary_col_modifier match error"); }
@@ -1241,10 +1250,15 @@ void basic_unary_col_modifier<in_t, out_t, UnaryOperation>::process_token(const 
         columns.resize(columns.size() + 1);
         columns.back().col = column;
         columns.back().unary_op = (*i).unary_op;
+        matched = 1;
+        char* next = buf;
+        if(!rc) rc = 10;
+        generate_substitution(token, (*i).new_key.c_str(), ovector, rc, buf, next, end);
+        out->process_token(buf, next - buf - 1);
         break;
       }
     }
-    out->process_token(token, len);
+    if(!matched) out->process_token(token, len);
   }
   else {
     if(ci != columns.end() && column == (*ci).col) {
@@ -1520,12 +1534,13 @@ template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperatio
 template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation> basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::set_out(pass& out) { this->out = &out; return *this; }
 
 template<typename in1_t, typename in2_t, typename out_t, typename BinaryOperation>
-basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::add(const char* regex, const char* other_key, const BinaryOperation& binary_op)
+basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>& basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::add(const char* regex, const char* other_key, const char* new_key, const BinaryOperation& binary_op)
 {
   const char* err; int err_off; pcre* p = pcre_compile(regex, 0, &err, &err_off, 0);
   if(!p) throw runtime_error("basic_binary_col_modifier can't compile regex");
   insts.resize(insts.size() + 1);
   insts.back().regex = p;
+  insts.back().new_key = new_key;
   insts.back().other_key = other_key;
   insts.back().binary_op = binary_op;
   return *this;
@@ -1637,8 +1652,11 @@ void basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::process_li
           if(typeid(in2_t) == typeid(double)) p->need_double = 1;
           else p->need_c_str = 1;
 
+          next = buf;
+          generate_substitution(keys[column], (*ii).new_key.c_str(), ovector, rc, buf, next, end);
           new_col_info_t& nci = new_cols[column];
           nci.other_col = other_col;
+          nci.new_key.assign(buf, next - buf - 1);
           nci.binary_op = &(*ii).binary_op;
           break;
         }
@@ -1667,7 +1685,7 @@ void basic_binary_col_modifier<in1_t, in2_t, out_t, BinaryOperation>::process_li
       c.col_index = cols[(*i).first].index;
       c.other_col_index = cols[(*i).second.other_col].index;
       c.binary_op = *(*i).second.binary_op;
-      out->process_token(keys[(*i).first], lens[(*i).first]);
+      out->process_token((*i).second.new_key.c_str(), (*i).second.new_key.size());
     }
 
     delete[] buf;
@@ -1860,7 +1878,6 @@ void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_line(
         int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column], len, 0, 0, ovector, 30);
         if(rc < 0){ if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_binary_col_adder match error"); }
         else {
-          out->process_token((*ii).new_key.c_str(), (*ii).new_key.size());
           char* next = buf;
           if(!rc) rc = 10;
           generate_substitution(keys[column], (*ii).other_key.c_str(), ovector, rc, buf, next, end);
@@ -1870,6 +1887,10 @@ void basic_binary_col_adder<in1_t, in2_t, out_t, BinaryOperation>::process_line(
             stringstream msg; msg << "basic_binary_col_adder could not find " << buf << " which is paired with " << keys[column];
             throw runtime_error(msg.str());
           }
+
+          next = buf;
+          generate_substitution(keys[column], (*ii).new_key.c_str(), ovector, rc, buf, next, end);
+          out->process_token(buf, next - buf - 1);
 
           col_info_t i; i.index = numeric_limits<size_t>::max(); i.need_double = 0; i.need_c_str = 0;
           col_info_t* p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);

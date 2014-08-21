@@ -277,18 +277,18 @@ int validate_sorter()
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 const char* ucm_dd_expect[] = {
-  "C0", 0,
-  "0",  0,
-  "4",  0,
+  "C0T", 0,
+  "0",   0,
+  "4",   0,
   0
 };
 
 double quadruple(double a) { return a * 4; }
 
 const char* ucm_ss_expect[] = {
-  "L0_C0", 0,
-  "ODD",   0,
-  "EVEN",  0,
+  "L0_C0T", 0,
+  "ODD",    0,
+  "EVEN",   0,
   0
 };
 
@@ -309,7 +309,7 @@ c_str_and_len_t ucm_ss_hash(c_str_and_len_t a)
 }
 
 const char* ucm_ds_expect[] = {
-  "C0",      0,
+  "C0T",     0,
   "EVEN",    0,
   "ODD",     0,
   0
@@ -324,9 +324,9 @@ c_str_and_len_t ucm_cat(double a)
 }
 
 const char* ucm_sd_expect[] = {
-  "L0_C0", 0,
-  "243",   0,
-  "44",    0,
+  "L0_C0T", 0,
+  "243",    0,
+  "44",     0,
   0
 };
 
@@ -347,22 +347,22 @@ int validate_unary_col_modifier()
   try {
     simple_validater v(ucm_dd_expect);
     unary_col_modifier m(v);
-    m.add("^C0$", quadruple);
+    m.add("^C0$", "\\0T", quadruple);
     generate_numeric_data(m, 1, 3);
 
     v.init(ucm_ss_expect);
     unary_c_str_col_modifier sm(v);
-    sm.add("^L0_C0$", ucm_ss_hash);
+    sm.add("^L0_C0$", "\\0T", ucm_ss_hash);
     generate_data(sm, 1, 3);
 
     v.init(ucm_ds_expect);
     unary_double_c_str_col_modifier dsm(v);
-    dsm.add("^C0$", ucm_cat);
+    dsm.add("^C0$", "\\0T", ucm_cat);
     generate_numeric_data(dsm, 1, 3);
 
     v.init(ucm_sd_expect);
     unary_c_str_double_col_modifier sdm(v);
-    sdm.add("^L0_C0$", ucm_sd_hash);
+    sdm.add("^L0_C0$", "\\0T", ucm_sd_hash);
     generate_data(sdm, 1, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -490,9 +490,9 @@ int validate_unary_col_adder()
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 const char* bcm_dd_expect[] = {
-  "C0", "C1", 0,
-  "1",  "0",  0,
-  "5",  "6",  0,
+  "C0T", "C1T", 0,
+  "1",   "0",   0,
+  "5",   "6",   0,
   0
 };
 
@@ -500,9 +500,9 @@ double sum(double a, double b) { return a + b; }
 double mult(double a, double b) { return a * b; }
 
 const char* bcm_ss_expect[] = {
-  "L0_C1", "L0_C0", 0,
-  "L1_C1", "EVEN",  0,
-  "L2_C1", "ODD",   0,
+  "L0_C1", "L0_C0T", 0,
+  "L1_C1", "EVEN",   0,
+  "L2_C1", "ODD",    0,
   0
 };
 
@@ -526,7 +526,7 @@ c_str_and_len_t bcm_ss_hash(c_str_and_len_t a, c_str_and_len_t b)
 }
 
 const char* bcm_ds_expect[] = {
-  "C1", "C0",   0,
+  "C1", "C0T",  0,
   "1",  "EVEN", 0,
   "3",  "ODD",  0,
   0
@@ -541,9 +541,9 @@ c_str_and_len_t bcm_cat(double a, double b)
 }
 
 const char* bcm_sd_expect[] = {
-  "L0_C1", "L0_C0", 0,
-  "L1_C1", "213",   0,
-  "L2_C1", "211",   0,
+  "L0_C1", "L0_C0T", 0,
+  "L1_C1", "213",    0,
+  "L2_C1", "211",    0,
   0
 };
 
@@ -567,23 +567,23 @@ int validate_binary_col_modifier()
   try {
     simple_validater v(bcm_dd_expect);
     binary_col_modifier m(v);
-    m.add("^C0$", "C1", sum);
-    m.add("^C1$", "C0", mult);
+    m.add("^C0$", "C1", "\\0T", sum);
+    m.add("^C1$", "C0", "\\0T", mult);
     generate_numeric_data(m, 2, 3);
 
     v.init(bcm_ss_expect);
     binary_c_str_col_modifier sm(v);
-    sm.add("^L0_C0$", "L0_C1", bcm_ss_hash);
+    sm.add("^L0_C0$", "L0_C1", "\\0T", bcm_ss_hash);
     generate_data(sm, 2, 3);
 
     v.init(bcm_ds_expect);
     binary_double_c_str_col_modifier dsm(v);
-    dsm.add("^C0$", "C1", bcm_cat);
+    dsm.add("^C0$", "C1", "\\0T", bcm_cat);
     generate_numeric_data(dsm, 2, 3);
 
     v.init(bcm_sd_expect);
     binary_c_str_double_col_modifier sdm(v);
-    sdm.add("^L0_C0$", "L0_C1", bcm_sd_hash);
+    sdm.add("^L0_C0$", "L0_C1", "\\0T", bcm_sd_hash);
     generate_data(sdm, 2, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -598,9 +598,9 @@ int validate_binary_col_modifier()
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 const char* bca_dd_expect[] = {
-  "C0", "C1", "sum", "mult",  0,
-  "0",  "1",  "1",   "0",     0,
-  "2",  "3",  "5",   "6",     0,
+  "C0", "C1", "C0sum", "mult",  0,
+  "0",  "1",  "1",     "0",     0,
+  "2",  "3",  "5",     "6",     0,
   0
 };
 
@@ -672,7 +672,7 @@ int validate_binary_col_adder()
   try {
     simple_validater v(bca_dd_expect);
     binary_col_adder a(v);
-    a.add("^C0$", "C1", "sum", sum);
+    a.add("^C0$", "C1", "\\0sum", sum);
     a.add("^C1$", "C0", "mult", mult);
     generate_numeric_data(a, 2, 3);
 
