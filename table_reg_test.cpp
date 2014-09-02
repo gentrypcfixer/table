@@ -152,6 +152,13 @@ const char* stacker_expect2[] = {
   0
 };
 
+const char* stacker_expect3[] = {
+  "C0", "C1", "keyword", "data", 0,
+  "0",  "1",  "C3",      "3",    0,
+  "4",  "5",  "C3",      "7",    0,
+  0
+};
+
 int validate_stacker()
 {
   int ret_val = 0;
@@ -172,6 +179,14 @@ int validate_stacker()
     st.add_action(0, "L0_C3", ST_STACK);
 
     generate_data(st, 4, 3);
+
+    v.init(stacker_expect3);
+
+    st.init(v, ST_LEAVE);
+    st.add_action(0, "C2", ST_REMOVE);
+    st.add_action(0, "C3", ST_STACK);
+
+    generate_numeric_data(st, 4, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }

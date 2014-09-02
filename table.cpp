@@ -512,47 +512,53 @@ void ordered_tee::process_stream()
 // stacker
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-void stacker::push(const char* token, size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next)
+void stacker::resize(size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next)
 {
-  if(!next || len + 2 > size_t(tokens[index].second - next)) {
-    if(next) { *next++ = '\x03'; ++index; }
-    if(index < tokens.size()) {
-      size_t cap = size_t(tokens[index].second - next);
-      if(cap < len + 2) {
-        cap = len + 2;
-        delete[] tokens[index].first;
-        tokens[index].first = new char[cap];
-        tokens[index].second = tokens[index].first + cap;
-      }
+  if(next) { *next++ = '\x03'; ++index; }
+  if(index < tokens.size()) {
+    size_t cap = size_t(tokens[index].second - next);
+    if(cap < len) {
+      cap = len;
+      delete[] tokens[index].first;
+      tokens[index].first = new char[cap];
+      tokens[index].second = tokens[index].first + cap;
     }
-    else {
-      size_t cap = 256 * 1024;
-      if(cap < len + 2) cap = len + 2;
-      char* p = new char[cap];
-      tokens.push_back(pair<char*, char*>(p, p + cap));
-    }
-    next = tokens[index].first;
   }
-  memcpy(next, token, len + 1);
-  next += len + 1;
+  else {
+    size_t cap = 256 * 1024;
+    if(cap < len) cap = len;
+    char* p = new char[cap];
+    tokens.push_back(pair<char*, char*>(p, p + cap));
+  }
+  next = tokens[index].first;
 }
 
-void stacker::process_out_line(const char* token, size_t len)
+void stacker::process_leave_tokens()
 {
   vector<pair<char*, char*> >::iterator lti = leave_tokens.begin();
-  if(lti != leave_tokens.end()) {
-    char* ltp = (*lti).first;
-    while(1) {
-      size_t len = strlen(ltp);
-      out->process_token(ltp, len);
-      ltp += len + 1;
-      if(*ltp == '\x03') ltp = (*++lti).first;
-      else if(*ltp == '\x04') break;
-    }
+  if(lti == leave_tokens.end()) return;
+  for(char* ltp = (*lti).first; 1;) {
+    if(*ltp == '\x01') { out->process_token(*reinterpret_cast<double*>(++ltp)); ltp += sizeof(double); }
+    else if(*ltp == '\x03') ltp = (*++lti).first;
+    else if(*ltp == '\x04') break;
+    else { size_t len = strlen(ltp); out->process_token(ltp, len); ltp += len + 1; }
   }
-  out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
-  out->process_token(token, len);
-  out->process_line();
+}
+
+void stacker::process_stack_tokens()
+{
+  vector<pair<char*, char*> >::iterator sti = stack_tokens.begin();
+  stack_column = 0;
+  for(char* stp = (*sti).first; 1;) {
+    process_leave_tokens();
+    out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+    if(*stp == '\x01') { out->process_token(*reinterpret_cast<double*>(++stp)); stp += sizeof(double); }
+    else { size_t len = strlen(stp); out->process_token(stp, len); stp += len + 1; }
+    out->process_line();
+    ++stack_column;
+    if(*stp == '\x03') stp = (*++sti).first;
+    else if(*stp == '\x04') break;
+  }
 }
 
 stacker::stacker(stack_action_e default_action) { init(default_action); }
@@ -634,28 +640,69 @@ void stacker::process_token(const char* token, size_t len)
   else {
     if(column >= actions.size()) throw runtime_error("too many columns");
     else if(actions[column] == ST_LEAVE) {
-      push(token, len, leave_tokens, leave_tokens_index, leave_tokens_next);
+      if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second)
+        resize(len + 2, leave_tokens, leave_tokens_index, leave_tokens_next);
+      memcpy(leave_tokens_next, token, len); leave_tokens_next += len;
+      *leave_tokens_next++ = '\0';
       if(column == last_leave) {
         *leave_tokens_next++ = '\x04';
         if(stack_tokens_next) {
           *stack_tokens_next++ = '\x04';
-          vector<pair<char*, char*> >::iterator sti = stack_tokens.begin();
-          char* stp = (*sti).first;
-          stack_column = 0;
-          while(1) {
-            size_t len = strlen(stp);
-            process_out_line(stp, len);
-            stp += len + 1;
-            ++stack_column;
-            if(*stp == '\x03') stp = (*++sti).first;
-            else if(*stp == '\x04') break;
-          }
+          process_stack_tokens();
         }
       }
     }
     else if(actions[column] == ST_STACK) { 
-      if(column < last_leave) { push(token, len, stack_tokens, stack_tokens_index, stack_tokens_next); }
-      else { process_out_line(token, len); ++stack_column; }
+      if(column < last_leave) {
+        if(!stack_tokens_next || stack_tokens_next + len + 2 > stack_tokens[stack_tokens_index].second)
+          resize(len + 2, stack_tokens, stack_tokens_index, stack_tokens_next);
+        memcpy(stack_tokens_next, token, len); stack_tokens_next += len;
+        *stack_tokens_next++ = '\0';
+      }
+      else {
+        process_leave_tokens();
+        out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+        out->process_token(token, len);
+        out->process_line();
+        ++stack_column;
+      }
+    }
+  }
+
+  ++column;
+}
+
+void stacker::process_token(double token)
+{
+  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
+
+  if(column >= actions.size()) throw runtime_error("too many columns");
+  else if(actions[column] == ST_LEAVE) {
+    if(!leave_tokens_next || leave_tokens_next + sizeof(token) + 2 > leave_tokens[leave_tokens_index].second)
+      resize(sizeof(token) + 2, leave_tokens, leave_tokens_index, leave_tokens_next);
+    *leave_tokens_next++ = '\x01';
+    memcpy(leave_tokens_next, &token, sizeof(token)); leave_tokens_next += sizeof(token);
+    if(column == last_leave) {
+      *leave_tokens_next++ = '\x04';
+      if(stack_tokens_next) {
+        *stack_tokens_next++ = '\x04';
+        process_stack_tokens();
+      }
+    }
+  }
+  else if(actions[column] == ST_STACK) { 
+    if(column < last_leave) {
+      if(!stack_tokens_next || stack_tokens_next + sizeof(token) + 2 > stack_tokens[stack_tokens_index].second)
+        resize(sizeof(token) + 2, stack_tokens, stack_tokens_index, stack_tokens_next);
+      *stack_tokens_next++ = '\x01';
+      memcpy(stack_tokens_next, &token, sizeof(token)); stack_tokens_next += sizeof(token);
+    }
+    else {
+      process_leave_tokens();
+      out->process_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+      out->process_token(token);
+      out->process_line();
+      ++stack_column;
     }
   }
 

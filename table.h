@@ -254,8 +254,9 @@ class stacker : public pass {
 
   stacker(const stacker& other);
   stacker& operator=(const stacker& other);
-  void push(const char* token, size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next);
-  void process_out_line(const char* token, size_t len);
+  void resize(size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next);
+  void process_leave_tokens();
+  void process_stack_tokens();
 
 public:
   stacker(stack_action_e default_action);
@@ -269,6 +270,7 @@ public:
   stacker& add_action(bool regex, const char* key, stack_action_e action);
 
   void process_token(const char* token, size_t len);
+  void process_token(double token);
   void process_line();
   void process_stream();
 };
