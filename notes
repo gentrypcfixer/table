@@ -1,7 +1,6 @@
-improve differ (binary col adder)
-process_token(double)
-  * stacker
-  * splitter
-get rid of cstring_queue
 sorter
-check allocations
+  * process_token(double)
+  * sort_buf_len doesn't seem to reset
+splitter
+  * process_token(double)
+rejiggerer
