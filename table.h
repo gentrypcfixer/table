@@ -78,36 +78,6 @@ struct c_str_and_len_t
   c_str_and_len_t(const char* c_str, size_t len) : c_str(c_str), len(len) {}
 };
 
-template<typename T> void split_csv(T& func, const char* csv)
-{
-  const char* s = csv;
-  const char* e = strchr(csv, ',');
-  char * buf = 0;
-  char * end = 0;
-  while(1) {
-    char* p = (char*)s;
-    if(e) {
-      size_t len = e - s;
-      if(!buf || buf + len + 1 > end) {
-        delete[] buf;
-        const size_t cap = (len + 1) * 2;
-        buf = new char[cap];
-        end = buf + cap;
-      }
-      memcpy(buf, s, len);
-      buf[len] = '\0';
-      p = buf;
-    }
-
-    func(p);
-
-    if(!e) break;
-    s = e + 1;
-    e = strchr(s, ',');
-  }
-  delete[] buf;
-}
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // pass
