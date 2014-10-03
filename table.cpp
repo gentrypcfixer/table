@@ -7,7 +7,7 @@
 #undef TABLE_DIMENSIONS_DEBUG_PRINTS
 
 using namespace std;
-using namespace std::tr1;
+//using namespace std::tr1;
 
 
 namespace table {

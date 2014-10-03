@@ -5,7 +5,7 @@
 #define TABLE_MINOR @TABLE_MINOR@
 
 #include <string>
-#include <tr1/unordered_map>
+//#include <tr1/unordered_map>
 #include <map>
 #include <set>
 #include <vector>
@@ -320,7 +320,8 @@ class splitter : public pass {
   std::vector<char*> group_storage;
   char* group_storage_next;
   char* group_storage_end;
-  typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  //typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  typedef std::map<char*, std::vector<std::string>, multi_cstr_less> data_t;
   data_t data;
 
   splitter(const splitter& other);
@@ -734,7 +735,8 @@ class summarizer : public pass {
   std::vector<summarizer_data_t*> data_storage;
   summarizer_data_t* data_storage_next;
   summarizer_data_t* data_storage_end;
-  typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  //typedef std::tr1::unordered_map<char*, summarizer_data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  typedef std::map<char*, summarizer_data_t*, multi_cstr_less> data_t;
   data_t data;
 
   summarizer(const summarizer& other);
