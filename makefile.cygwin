@@ -1,0 +1,42 @@
+CXX = /usr/bin/x86_64-w64-mingw32-g++.exe
+
+CXXFLAGS = -DPCRE_STATIC -Wall -O2
+
+LDFLAGS = -lpcre -lpthread
+
+.PHONY : all clean
+
+all : libtable.a table_stack.exe table_col_adder.exe table_test.exe table_reg_test.exe
+
+clean :
+	rm -f *.o libtable.a *.exe
+
+%.exe : %.o
+	$(CXX) $+ $(LDFLAGS) -o $@
+
+%.o : %.cpp
+	$(CXX) -c $(CXXFLAGS) $< -o $@
+
+
+#objects
+table.o : table.h
+numeric.o : table.h
+table_stack.o : table.h
+table_split.o : table.h
+table_col_adder.o : table.h
+table_test.o : table.h
+table_reg_test.o : table.h
+
+
+#libraries
+libtable.a : table.o numeric.o
+	ar rcs $@ $+
+
+
+#binaries
+table_stack.exe : libtable.a
+table_split.exe : libtable.a
+table_col_adder.exe : libtable.a
+table_test.exe : libtable.a
+table_reg_test.exe : libtable.a
+

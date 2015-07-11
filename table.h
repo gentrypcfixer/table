@@ -1,8 +1,8 @@
 #ifndef table_h_
 #define table_h_
 
-#define TABLE_MAJOR @TABLE_MAJOR@
-#define TABLE_MINOR @TABLE_MINOR@
+#define TABLE_MAJOR_VER 1
+#define TABLE_MINOR_VER 0
 
 #include <string>
 //#include <tr1/unordered_map>
@@ -22,6 +22,9 @@ inline void pcre_free_study(void *p) { free(p); }
 
 
 namespace table {
+
+int major_ver();
+int minor_ver();
 
 void resize_buffer(char*& buf, char*& next, char*& end, size_t min_to_add = 0, char** resize_end = 0);
 void generate_substitution(const char* token, const char* replace_with, const int* ovector, int num_captured, char*& buf, char*& next, char*& end);

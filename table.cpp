@@ -12,6 +12,9 @@ using namespace std;
 
 namespace table {
 
+int major_ver() { return TABLE_MAJOR_VER; }
+int minor_ver() { return TABLE_MINOR_VER; }
+
 void resize_buffer(char*& buf, char*& next, char*& end, size_t min_to_add, char** resize_end)
 {
   char* old = buf;
