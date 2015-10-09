@@ -24,8 +24,6 @@ clean :
 #objects
 table.o : table.h
 table_fPIC.o : table.h
-numeric.o : table.h
-numeric_fPIC.o : table.h
 table_stack.o : table.h
 table_split.o : table.h
 table_col_adder.o : table.h
@@ -34,10 +32,10 @@ table_reg_test.o : table.h
 
 
 #libraries
-libtable.a : table.o numeric.o
+libtable.a : table.o
 	ar rcs $@ $+
 
-libtable.so.$(TABLE_MAJOR_VER).$(TABLE_MINOR_VER) : table_fPIC.o numeric_fPIC.o
+libtable.so.$(TABLE_MAJOR_VER).$(TABLE_MINOR_VER) : table_fPIC.o
 	$(CXX) -shared -Wl,-soname,libtable.so.$(TABLE_MAJOR_VER) $+ -o $@
 
 libtable.so.$(TABLE_MAJOR_VER) : libtable.so.$(TABLE_MAJOR_VER).$(TABLE_MINOR_VER)

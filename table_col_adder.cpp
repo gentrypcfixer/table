@@ -38,11 +38,10 @@ int main(int argc, char* argv[])
       }
     }
 
-    csv_writer w(cout.rdbuf());
-    substituter sub(from, to);
-    basic_unary_col_adder<c_str_and_len_t, c_str_and_len_t, substituter> suba(w);
-    suba.add(col_regex, new_col_name, sub);
-    read_csv(cin.rdbuf(), suba);
+    csv_reader<substitute_col_adder<csv_writer> > r; r.set_fd(STDIN_FILENO);
+    substitute_col_adder<csv_writer>& suba = r.get_out(); substituter sub(from, to); suba.add(col_regex, new_col_name, sub);
+    csv_writer& w = suba.get_out(); w.set_fd(STDOUT_FILENO);
+    r.run();
   }
   catch(exception& e) { cerr << "Exception: " << e.what() << endl; }
   catch(...) { cerr << "Unknown Exception" << endl; }

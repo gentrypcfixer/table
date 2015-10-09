@@ -25,8 +25,9 @@ int main(int argc, char* argv[])
   int ret_val = 0;
 
   try {
-    csv_writer w(cout.rdbuf());
-    stacker s(w, ST_LEAVE);
+    csv_reader<stacker<csv_writer> > r; r.set_fd(STDIN_FILENO);
+    stacker<csv_writer>& s = r.get_out(); s.set_default_action(ST_LEAVE);
+    csv_writer& w = s.get_out(); w.set_fd(STDOUT_FILENO);
 
     stack_action_e mode = ST_STACK;
     bool regex = 0;
@@ -44,7 +45,7 @@ int main(int argc, char* argv[])
       else s.add_action(regex, argv[arg], mode);
     }
 
-    read_csv(cin.rdbuf(), s);
+    r.run();
   }
   catch(exception& e) { cerr << "Exception: " << e.what() << endl; }
   catch(...) { cerr << "Unknown Exception" << endl; }

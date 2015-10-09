@@ -12,7 +12,7 @@ using namespace table;
 // data_generators
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-void generate_data(pass& out, size_t num_columns, size_t num_lines)
+template<typename out_t> void generate_data(out_t& out, size_t num_columns, size_t num_lines)
 {
   char buf[2048];
 
@@ -32,7 +32,7 @@ void generate_data(pass& out, size_t num_columns, size_t num_lines)
   out.process_stream();
 };
 
-void generate_numeric_data(pass& out, size_t num_columns, size_t num_lines)
+template<typename out_t> void generate_numeric_data(out_t& out, size_t num_columns, size_t num_lines)
 {
   char buf[2048];
   size_t count = 0;
@@ -56,7 +56,7 @@ void generate_numeric_data(pass& out, size_t num_columns, size_t num_lines)
 // feed_data
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-void feed_data(pass& out, const char** data)
+template<typename out_t> void feed_data(out_t& out, const char** data)
 {
   bool f = 0;
   const char** p = data;
@@ -79,19 +79,18 @@ void feed_data(pass& out, const char** data)
 // simple_validator
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class simple_validater : public pass {
+template<typename input_base_t> class basic_simple_validater_t : public input_base_t
+{
   const char** expected;
   size_t column;
   size_t line;
 
   public:
-  simple_validater(const char** expected) { init(expected); }
+  basic_simple_validater_t() : expected(0), column(0), line(0) {}
 
-  void init(const char** expected) {
-    this->expected = expected;
-    column = 0;
-    line = 0;
-  }
+  void reinit(int more_passes = 0) { reinit_state(); }
+  void reinit_state(int more_passes = 0) { column = 0; line = 0; }
+  void set_expected(const char** expected) { this->expected = expected; }
 
   void process_token(const char* token, size_t len) {
     if(!*expected) {
@@ -110,6 +109,8 @@ class simple_validater : public pass {
     ++expected;
     ++column;
   }
+
+  void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
 
   void process_line() {
     if(*expected) {
@@ -133,6 +134,8 @@ class simple_validater : public pass {
   }
 };
 
+class simple_validater : public basic_simple_validater_t<empty_class_t> {};
+class dynamic_simple_validater : public basic_simple_validater_t<dynamic_pass_t> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // stacker
@@ -164,28 +167,29 @@ int validate_stacker()
   int ret_val = 0;
 
   try {
-    simple_validater v(stacker_expect);
 
-    stacker st(v, ST_STACK);
+    stacker<simple_validater> st;
+    st.set_default_action(ST_STACK);
     st.add_action(0, "L0_C1", ST_LEAVE);
     st.add_action(0, "L0_C3", ST_REMOVE);
-
+    simple_validater& v = st.get_out();
+    v.set_expected(stacker_expect);
     generate_data(st, 4, 2);
 
-    v.init(stacker_expect2);
 
-    st.init(v, ST_LEAVE);
+    st.reinit(-1);
+    st.set_default_action(ST_LEAVE);
     st.add_action(0, "L0_C2", ST_REMOVE);
     st.add_action(0, "L0_C3", ST_STACK);
-
+    v.set_expected(stacker_expect2);
     generate_data(st, 4, 3);
 
-    v.init(stacker_expect3);
 
-    st.init(v, ST_LEAVE);
+    st.reinit(-1);
+    st.set_default_action(ST_LEAVE);
     st.add_action(0, "C2", ST_REMOVE);
     st.add_action(0, "C3", ST_STACK);
-
+    v.set_expected(stacker_expect3);
     generate_numeric_data(st, 4, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -226,16 +230,16 @@ int validate_splitter()
   int ret_val = 0;
 
   try {
-    simple_validater v(splitter_expect);
-
-    splitter s(v, SP_REMOVE);
+    splitter<simple_validater> s;
+    s.set_default_action(SP_REMOVE);
     s.add_action(0, "C0", SP_GROUP);
     s.add_action(0, "C1", SP_GROUP);
     s.add_action(0, "C2", SP_SPLIT_BY);
     s.add_action(0, "C3", SP_SPLIT_BY);
     s.add_action(0, "C4", SP_SPLIT);
     s.add_action(0, "C5", SP_SPLIT);
-
+    simple_validater& v = s.get_out();
+    v.set_expected(splitter_expect);
     feed_data(s, splitter_input);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -272,12 +276,11 @@ int validate_sorter()
   int ret_val = 0;
 
   try {
-    simple_validater v(sorter_expect);
-
-    sorter so(v);
+    sorter<simple_validater> so;
     so.add_sort("C0", 1);
     so.add_sort("C2", 0);
-
+    simple_validater& v = so.get_out();
+    v.set_expected(sorter_expect);
     feed_data(so, sorter_input);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -367,30 +370,30 @@ int validate_unary_col_adder()
   int ret_val = 0;
 
   try {
-    simple_validater v(uca_dd_expect);
-    unary_col_adder a(v);
+    unary_col_adder<simple_validater> a;
     a.add("^C0$", "tripple", tripple, 1);
+    a.get_out().set_expected(uca_dd_expect);
     generate_numeric_data(a, 1, 3);
 
-    v.init(uca_ss_expect);
-    unary_c_str_col_adder sa(v);
+    unary_c_str_col_adder<simple_validater> sa;
     sa.add("^L0_C0$", "ss_hash", uca_ss_hash);
+    sa.get_out().set_expected(uca_ss_expect);
     generate_data(sa, 1, 3);
 
-    v.init(uca_ds_expect);
-    unary_double_c_str_col_adder dsa(v);
+    unary_double_c_str_col_adder<simple_validater> dsa;
     dsa.add("^C0$", "cat", uca_cat);
+    dsa.get_out().set_expected(uca_ds_expect);
     generate_numeric_data(dsa, 1, 3);
 
-    v.init(uca_sd_expect);
-    unary_c_str_double_col_adder sda(v);
+    unary_c_str_double_col_adder<simple_validater> sda;
     sda.add("^L0_C0$", "sd_hash", uca_sd_hash, 1);
+    sda.get_out().set_expected(uca_sd_expect);
     generate_data(sda, 1, 3);
 
-    v.init(uca_sub_expect);
+    substitute_col_adder<simple_validater> suba;
     substituter sub("L(\\d+)_C0", "L\\1_C1");
-    substitute_col_adder suba(v);
     suba.add("^L0_C0$", "L0_C1", sub);
+    suba.get_out().set_expected(uca_sub_expect);
     generate_data(suba, 1, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -480,25 +483,25 @@ int validate_binary_col_adder()
   int ret_val = 0;
 
   try {
-    simple_validater v(bca_dd_expect);
-    binary_col_adder a(v);
+    binary_col_adder<simple_validater> a;
     a.add("^C0$", "C1", "\\0sum", sum);
     a.add("^C1$", "C0", "mult", mult, 1, 0);
+    a.get_out().set_expected(bca_dd_expect);
     generate_numeric_data(a, 2, 3);
 
-    v.init(bca_ss_expect);
-    binary_c_str_col_adder sa(v);
+    binary_c_str_col_adder<simple_validater> sa;
     sa.add("^L0_C0$", "L0_C1", "ss_hash", bca_ss_hash, 0, 1);
+    sa.get_out().set_expected(bca_ss_expect);
     generate_data(sa, 2, 3);
 
-    v.init(bca_ds_expect);
-    binary_double_c_str_col_adder dsa(v);
+    binary_double_c_str_col_adder<simple_validater> dsa;
     dsa.add("^C0$", "C1", "cat", bca_cat);
+    dsa.get_out().set_expected(bca_ds_expect);
     generate_numeric_data(dsa, 2, 3);
 
-    v.init(bca_sd_expect);
-    binary_c_str_double_col_adder sda(v);
+    binary_c_str_double_col_adder<simple_validater> sda;
     sda.add("^L0_C0$", "L0_C1", "sd_hash", bca_sd_hash);
+    sda.get_out().set_expected(bca_sd_expect);
     generate_data(sda, 2, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -537,14 +540,12 @@ int validate_summarizer()
   int ret_val = 0;
 
   try {
-    simple_validater v(summarizer_expect);
-
-    summarizer su(v);
+    summarizer<simple_validater> su;
     su.add_group("^C0$", 1);
     su.add_group("^C1$");
     su.add_data("^C1$", SUM_COUNT);
     su.add_data("^C2$", SUM_MISSING | SUM_COUNT | SUM_MAX);
-
+    su.get_out().set_expected(summarizer_expect);
     feed_data(su, summarizer_input);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -576,12 +577,10 @@ int validate_range_stacker()
   int ret_val = 0;
 
   try {
-    simple_validater v(range_stacker_expect);
-
-    range_stacker s(v);
+    range_stacker<simple_validater> s;
     s.add("C1", "C2", "X");
     s.add("C3", "C4", "Y");
-
+    s.get_out().set_expected(range_stacker_expect);
     generate_numeric_data(s, 5, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }

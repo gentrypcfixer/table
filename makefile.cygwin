@@ -20,7 +20,6 @@ clean :
 
 #objects
 table.o : table.h
-numeric.o : table.h
 table_stack.o : table.h
 table_split.o : table.h
 table_col_adder.o : table.h
@@ -29,7 +28,7 @@ table_reg_test.o : table.h
 
 
 #libraries
-libtable.a : table.o numeric.o
+libtable.a : table.o
 	ar rcs $@ $+
 
 
