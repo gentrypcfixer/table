@@ -8,6 +8,7 @@
 #include <sstream>
 //#include <tr1/unordered_map>
 #include <limits>
+#include <algorithm>
 #include <map>
 #include <set>
 #include <vector>
