@@ -242,7 +242,7 @@ public:
   void reinit_state(int more_passes = 0);
   void process_token(const char* token, size_t len);
   void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
-  void process_line() { if(line == 19) process_data(); else this->output('\n'); ++line; column = 0; }
+  void process_line() { if(line == 19) process_data(); else if(!line || line > 19) this->output('\n'); ++line; column = 0; }
   void process_stream() { if(line <= 19) process_data(); this->flush(); }
 };
 
@@ -336,7 +336,7 @@ template<typename output_base_t> class basic_csv_file_reader_t : public csv_read
 {
 public:
   ~basic_csv_file_reader_t() { if(this->fd >= 0) ::close(this->fd); }
-  void open(const char* path) { if(this->fd < 0) ::close(this->fd); this->fd = ::open(path, O_WRONLY | O_TRUNC); if(this->fd < 0) throw std::runtime_error("can't open output file"); }
+  void open(const char* path) { if(this->fd < 0) ::close(this->fd); this->fd = ::open(path, O_RDONLY); if(this->fd < 0) throw std::runtime_error("can't open output file"); }
   void close() { if(this->fd >= 0 && ::close(this->fd)) throw std::runtime_error("can't close output file"); }
 };
 
