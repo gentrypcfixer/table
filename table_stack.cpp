@@ -31,18 +31,27 @@ int main(int argc, char* argv[])
 
     stack_action_e mode = ST_STACK;
     bool regex = 0;
-    for(int arg = 1; arg < argc; ++arg) {
-      if('-' == argv[arg][0]) {
-        if('h' == argv[arg][1]) { print_help(); exit(0); }
-        if('s' == argv[arg][1]) { mode = ST_STACK; regex = 0; }
-        else if('S' == argv[arg][1]) { mode = ST_STACK; regex = 1; }
-        else if('r' == argv[arg][1]) { mode = ST_REMOVE; regex = 0; }
-        else if('R' == argv[arg][1]) { mode = ST_REMOVE; regex = 1; }
-        else if('l' == argv[arg][1]) { mode = ST_LEAVE; regex = 0; }
-        else if('L' == argv[arg][1]) { mode = ST_LEAVE; regex = 1; }
-        else { throw runtime_error("invalid argument"); }
+    for(arg_fetcher af(argc - 1, argv + 1, always_split_arg); af.type(); af.get_next()) {
+      if(af.type() & st_ddash) {
+        if(!af.key()) { throw runtime_error("invalid double dash argument"); }
+        else { throw runtime_error("invalid double dash argument: " + string(af.key(), af.key_len())); }
       }
-      else s.add_action(regex, argv[arg], mode);
+      else if(af.type() & st_plus) {
+        if(!af.key()) { throw runtime_error("invalid plus argument"); }
+        else { throw runtime_error("invalid plus argument: " + string(af.key(), af.key_len())); }
+      }
+      else if(af.type() & st_dash) {
+        if(!af.key()) { throw runtime_error("invalid dash argument"); }
+        else if('h' == af.key()[0]) { print_help(); exit(0); }
+        else if('s' == af.key()[0]) { mode = ST_STACK; regex = 0; }
+        else if('S' == af.key()[0]) { mode = ST_STACK; regex = 1; }
+        else if('r' == af.key()[0]) { mode = ST_REMOVE; regex = 0; }
+        else if('R' == af.key()[0]) { mode = ST_REMOVE; regex = 1; }
+        else if('l' == af.key()[0]) { mode = ST_LEAVE; regex = 0; }
+        else if('L' == af.key()[0]) { mode = ST_LEAVE; regex = 1; }
+        else { throw runtime_error("invalid dash argument: " + string(af.key(), af.key_len())); }
+      }
+      else s.add_action(regex, af.val(), mode);
     }
 
     r.run();

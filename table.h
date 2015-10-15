@@ -6,11 +6,13 @@
 
 #include <string>
 #include <sstream>
+#include <fstream>
 //#include <tr1/unordered_map>
 #include <limits>
 #include <algorithm>
 #include <map>
 #include <set>
+#include <stack>
 #include <vector>
 #include <pcre.h>
 #include <stdint.h>
@@ -91,6 +93,62 @@ struct c_str_and_len_t
 };
 
 class empty_class_t {};
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// setting_fetcher
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const int st_key = 0x1;
+const int st_val = 0x2;
+
+class setting_fetcher {
+protected:
+  int cur_type;
+  const char* key_;
+  size_t key_len_;
+  const char* val_;
+  size_t val_len_;
+  setting_fetcher() : cur_type(0) {}
+
+public:
+  int type() { return cur_type; }
+  const char* key() { return key_; }
+  size_t key_len() { return key_len_; }
+  const char* val() { return val_; }
+  size_t val_len() { return val_len_; }
+};
+
+const int st_dash = 0x4;
+const int st_ddash = 0x8;
+const int st_plus = 0x10;
+const int st_first_split_val = 0x20;
+const int st_more_split_vals = 0x40;
+
+class arg_fetcher : public setting_fetcher {
+  int argc;
+  const char** argv;
+  bool (*split_csv_values)(int, const char*, size_t);
+
+  int arg;
+  const char* argp;
+  int state;
+  char* buf;
+  char* next;
+  char* end;
+  std::stack<std::filebuf*> files;
+
+public:
+  arg_fetcher(int argc, char** argv, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(argc), argv((const char**)argv), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
+  arg_fetcher(int argc, const char** argv, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(argc), argv(argv), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
+  arg_fetcher(const char* arg, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(1), argv(&arg), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
+  ~arg_fetcher() { while(files.size()) { delete files.top(); files.pop(); } }
+
+  void rewind() { while(files.size()) { delete files.top(); files.pop(); } arg = 0; argp = argc ? argv[0] : 0; get_next(); }
+  void get_next();
+};
+
+extern bool always_split_arg(int type, const char* key, size_t len);
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
