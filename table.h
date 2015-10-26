@@ -1,7 +1,7 @@
 #ifndef table_h_
 #define table_h_
 
-#define TABLE_MAJOR_VER 2
+#define TABLE_MAJOR_VER 3
 #define TABLE_MINOR_VER 0
 
 #include <string>
@@ -32,6 +32,8 @@ inline void pcre_free_study(void *p) { free(p); }
 
 
 namespace table {
+
+using namespace std;
 
 int major_ver();
 int minor_ver();
@@ -136,7 +138,7 @@ class arg_fetcher : public setting_fetcher {
   char* buf;
   char* next;
   char* end;
-  std::stack<std::filebuf*> files;
+  stack<filebuf*> files;
 
 public:
   arg_fetcher(int argc, char** argv, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(argc), argv((const char**)argv), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
@@ -200,14 +202,8 @@ protected:
 public:
   single_output_pass_class_t() : out(0) {}
   virtual ~single_output_pass_class_t() {}
-  dynamic_pass_t& get_out() { return *out; }
-  void set_out(dynamic_pass_t& out) { this->out = &out; }
-};
-
-template<typename derived_t, typename out_t> class single_output_pass_pass_t : public single_output_pass_class_t<out_t> {
-public:
-  void reinit(int more_passes = 0) { static_cast<derived_t>(this)->reinit_(); this->reinit_output_if(more_passes); }
-  void reinit_state(int more_passes = 0) {  static_cast<derived_t>(this)->reinit_(); this->reinit_output_state_if(more_passes); }
+  dynamic_pass_t* get_out() { return out; }
+  void set_out(dynamic_pass_t* out) { if(!out) throw runtime_error("null out"); this->out = out; }
 };
 
 
@@ -235,7 +231,7 @@ protected:
       if(num_written == (ssize_t)len) { fd_next = fd_buf; break; }
       else if(num_written >= 0) { begin += num_written; }
       else if(errno == EINTR) { continue; }
-      else if(!silent) { throw std::runtime_error("unable to write"); }
+      else if(!silent) { throw runtime_error("unable to write"); }
     }
     fd_next = fd_buf;
   }
@@ -264,7 +260,7 @@ protected:
   ~fd_writer_t() { flush_(1); }
 
 public:
-  void set_fd(int fd) { if(fd < 0) throw std::runtime_error("writer::invalid out"); this->fd = fd; }
+  void set_fd(int fd) { if(fd < 0) throw runtime_error("writer::invalid out"); this->fd = fd; }
 };
 
 class file_writer_t : public writer_base_t
@@ -273,8 +269,8 @@ protected:
   ~file_writer_t() { flush_(1); if(fd >= 0) ::close(fd); }
 
 public:
-  void open(const char* path) { if(fd < 0) close(); this->fd = ::open(path, O_WRONLY | O_TRUNC); if(fd < 0) throw std::runtime_error("can't open output file"); }
-  void close() { if(fd >= 0 && ::close(fd)) throw std::runtime_error("can't close output file"); fd = -1; }
+  void open(const char* path) { if(fd < 0) close(); this->fd = ::open(path, O_WRONLY | O_TRUNC); if(fd < 0) throw runtime_error("can't open output file"); }
+  void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
 };
 
 
@@ -287,8 +283,8 @@ template<typename input_base_t, typename output_base_t> class basic_tabular_writ
 protected:
   int line;
   size_t column;
-  std::vector<size_t> max_width;
-  std::vector<char*> data;
+  vector<size_t> max_width;
+  vector<char*> data;
   char* next;
   char* end;
 
@@ -304,10 +300,10 @@ public:
   void process_stream() { if(line <= 19) process_data(); this->flush(); }
 };
 
-class tabular_writer : public basic_tabular_writer_t<empty_class_t, fd_writer_t> {};
-class dynamic_tabular_writer : public basic_tabular_writer_t<dynamic_pass_t, fd_writer_t> {};
-class tabular_file_writer : public basic_tabular_writer_t<empty_class_t, file_writer_t> {};
-class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t, file_writer_t> {};
+class tabular_writer : public basic_tabular_writer_t<empty_class_t, fd_writer_t> { public: tabular_writer() {} tabular_writer(int fd) { set_fd(fd); } };
+class dynamic_tabular_writer : public basic_tabular_writer_t<dynamic_pass_t, fd_writer_t> { public: dynamic_tabular_writer() {} dynamic_tabular_writer(int fd) { set_fd(fd); } };
+class tabular_file_writer : public basic_tabular_writer_t<empty_class_t, file_writer_t> { public: tabular_file_writer() {} tabular_file_writer(const char* path) { open(path); } };
+class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t, file_writer_t> { public: dynamic_tabular_file_writer() {} dynamic_tabular_file_writer(const char* path) { open(path); } };
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -326,30 +322,29 @@ protected:
 public:
   void reinit(int more_passes = 0) { reinit_state(); }
   void reinit_state(int more_passes = 0) { line = 0; num_columns = 0; column = 0; }
-  void set_out(std::streambuf* out) { if(!out) throw std::runtime_error("csv_writer::set_out null out"); this->out = out; }
   void process_token(const char* token, size_t len) { if(column) output_base_t::output(','); output_base_t::output(token, len); ++column; }
   void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
   void process_line() {
     if(!line) { num_columns = column; }
     else if(column != num_columns) {
-      std::stringstream msg; msg << "csv_writer: line " << line << " (zero's based) has " << column << " columns instead of " << num_columns;
-      throw std::runtime_error(msg.str());
+      stringstream msg; msg << "csv_writer: line " << line << " (zero's based) has " << column << " columns instead of " << num_columns;
+      throw runtime_error(msg.str());
     }
     output_base_t::output('\n'); column = 0; ++line;
   }
   void process_stream() {
     this->flush();
-    if(line && column) throw std::runtime_error("csv_writer saw process_stream called after process_token");
+    if(line && column) throw runtime_error("csv_writer saw process_stream called after process_token");
 #ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
     cerr << "csv_writer saw dimensions of " << num_columns << " by " << line << endl;
 #endif
   }
 };
 
-class csv_writer : public basic_csv_writer_t<empty_class_t, fd_writer_t> {};
-class dynamic_csv_writer : public basic_csv_writer_t<dynamic_pass_t, fd_writer_t> {};
-class csv_file_writer : public basic_csv_writer_t<empty_class_t, file_writer_t> {};
-class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_writer_t> {};
+class csv_writer : public basic_csv_writer_t<empty_class_t, fd_writer_t> { public: csv_writer() {} csv_writer(int fd) { set_fd(fd); } };
+class dynamic_csv_writer : public basic_csv_writer_t<dynamic_pass_t, fd_writer_t> { public: dynamic_csv_writer() {} dynamic_csv_writer(int fd) { set_fd(fd); } };
+class csv_file_writer : public basic_csv_writer_t<empty_class_t, file_writer_t> { public: csv_file_writer() {} csv_file_writer(const char* path) { open(path); } };
+class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_writer_t> { public: dynamic_csv_file_writer() {} dynamic_csv_file_writer(const char* path) { open(path); } };
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -394,8 +389,8 @@ template<typename output_base_t> class basic_csv_file_reader_t : public csv_read
 {
 public:
   ~basic_csv_file_reader_t() { if(this->fd >= 0) ::close(this->fd); }
-  void open(const char* path) { if(this->fd < 0) ::close(this->fd); this->fd = ::open(path, O_RDONLY); if(this->fd < 0) throw std::runtime_error("can't open output file"); }
-  void close() { if(this->fd >= 0 && ::close(this->fd)) throw std::runtime_error("can't close output file"); }
+  void open(const char* path) { if(this->fd < 0) ::close(this->fd); this->fd = ::open(path, O_RDONLY); if(this->fd < 0) throw runtime_error("can't open output file"); }
+  void close() { if(this->fd >= 0 && ::close(this->fd)) throw runtime_error("can't close output file"); }
 };
 
 template<typename out_t> class csv_file_reader : public basic_csv_file_reader_t<single_output_pass_class_t<out_t> > {};
@@ -461,38 +456,38 @@ template<typename input_base_t> class basic_subset_tee_t : public input_base_t
 protected:
   struct dest_data_t
   {
-    std::set<std::string> key;
-    std::set<std::string> key_except;
-    std::vector<pcre*> regex;
-    std::vector<pcre*> regex_except;
+    set<string> key;
+    set<string> key_except;
+    vector<pcre*> regex;
+    vector<pcre*> regex_except;
     bool has_data;
 
     dest_data_t() : has_data(0) {}
     ~dest_data_t() {
-      for(std::vector<pcre*>::iterator i = regex.begin(); i != regex.end(); ++i) pcre_free(*i);
-      for(std::vector<pcre*>::iterator i = regex_except.begin(); i != regex_except.end(); ++i) pcre_free(*i);
+      for(vector<pcre*>::iterator i = regex.begin(); i != regex.end(); ++i) pcre_free(*i);
+      for(vector<pcre*>::iterator i = regex_except.begin(); i != regex_except.end(); ++i) pcre_free(*i);
     }
   };
 
-  typename std::map<dynamic_pass_t*, dest_data_t> dest_data;
-  typename std::map<dynamic_pass_t*, dest_data_t>::iterator ddi;
+  map<dynamic_pass_t*, dest_data_t> dest_data;
+  typename map<dynamic_pass_t*, dest_data_t>::iterator ddi;
   bool first_row;
   int column;
-  std::vector<std::pair<int, dynamic_pass_t*> > dest;
-  std::vector<std::pair<int, dynamic_pass_t*> >::iterator di;
+  vector<pair<int, dynamic_pass_t*> > dest;
+  vector<pair<int, dynamic_pass_t*> >::iterator di;
 
   basic_subset_tee_t() : ddi(dest_data.end()), first_row(1), column(0) {}
 
 public:
-  void reinit(int more_passes = 0) { dest_data.clear(); ddi = dest_data.end(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename std::map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit(more_passes); }
-  void reinit_state(int more_passes = 0) { first_row = 1; column = 0; this->dest.clear(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename std::map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit_state(more_passes); }
-  void set_dest(dynamic_pass_t& dest) { ddi = dest_data.insert(std::map<dynamic_pass_t*, dest_data_t>::value_type(&dest, dest_data_t())).first; }
+  void reinit(int more_passes = 0) { dest_data.clear(); ddi = dest_data.end(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit(more_passes); }
+  void reinit_state(int more_passes = 0) { first_row = 1; column = 0; this->dest.clear(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit_state(more_passes); }
+  void set_dest(dynamic_pass_t& dest) { ddi = dest_data.insert(map<dynamic_pass_t*, dest_data_t>::value_type(&dest, dest_data_t())).first; }
   void add_data(bool regex, const char* key);
   void add_exception(bool regex, const char* key);
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
-  void process_stream() { for(typename std::map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) (*ddi).first->process_stream(); }
+  void process_stream() { for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) (*ddi).first->process_stream(); }
 };
 
 class subset_tee : public basic_subset_tee_t<empty_class_t> {};
@@ -508,18 +503,18 @@ template<typename input_base_t> class basic_ordered_tee_t : public input_base_t 
   basic_ordered_tee_t& operator=(const basic_ordered_tee_t& other);
 
 protected:
-  std::vector<dynamic_pass_t*> out;
+  vector<dynamic_pass_t*> out;
   bool first_row;
   int num_columns;
-  std::vector<char*> data;
+  vector<char*> data;
   char* next;
   char* end;
 
   basic_ordered_tee_t() : first_row(1), num_columns(0), next(0), end(0) {}
-  ~basic_ordered_tee_t() { for(std::vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i; }
+  ~basic_ordered_tee_t() { for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i; }
 
 public:
-  void reinit(int more_passes = 0) { out.clear(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename std::vector<dynamic_pass_t*>::iterator i = out.begin(); i != out.end(); ++i) (*i)->reinit(more_passes); }
+  void reinit(int more_passes = 0) { out.clear(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename vector<dynamic_pass_t*>::iterator i = out.begin(); i != out.end(); ++i) (*i)->reinit(more_passes); }
   void reinit_state(int more_passes = 0);
   void add_out(dynamic_pass_t& out) { this->out.push_back(&out); }
   void process_token(const char* token, size_t len);
@@ -556,28 +551,28 @@ protected:
   };
 
   stack_action_e default_action;
-  std::map<std::string, stack_action_e> keyword_actions;
-  std::vector<regex_stack_action_t> regex_actions;
+  map<string, stack_action_e> keyword_actions;
+  vector<regex_stack_action_t> regex_actions;
 
   //header information
   bool first_line;
-  std::vector<std::string> stack_keys;
-  std::vector<stack_action_e> actions;
+  vector<string> stack_keys;
+  vector<stack_action_e> actions;
   size_t last_leave;
 
   //current line information
   size_t column;
   size_t stack_column;
-  std::vector<std::pair<char*, char*> > leave_tokens;
+  vector<pair<char*, char*> > leave_tokens;
   size_t leave_tokens_index;
   char* leave_tokens_next;
-  std::vector<std::pair<char*, char*> > stack_tokens;
+  vector<pair<char*, char*> > stack_tokens;
   size_t stack_tokens_index;
   char* stack_tokens_next;
 
   basic_stacker_t() : default_action(ST_REMOVE), first_line(1), last_leave(0), column(0), stack_column(0), leave_tokens_index(0), leave_tokens_next(0), stack_tokens_index(0), stack_tokens_next(0) {}
   ~basic_stacker_t();
-  void resize(size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next);
+  void resize(size_t len, vector<pair<char*, char*> >& tokens, size_t& index, char*& next);
   void process_leave_tokens();
   void process_stack_tokens();
 
@@ -619,13 +614,13 @@ protected:
   struct regex_action_t { pcre* regex; split_action_e action; };
 
   split_action_e default_action;
-  std::map<std::string, split_action_e> keyword_actions;
-  std::vector<regex_action_t> regex_actions;
+  map<string, split_action_e> keyword_actions;
+  vector<regex_action_t> regex_actions;
 
   bool first_line;
-  std::vector<split_action_e> actions;
-  std::vector<std::string> group_keys;
-  std::vector<std::string> split_keys;
+  vector<split_action_e> actions;
+  vector<string> group_keys;
+  vector<string> split_keys;
 
   size_t column;
   char* group_tokens;
@@ -638,12 +633,12 @@ protected:
   char* split_tokens_next;
   char* split_tokens_end;
 
-  std::map<char*, size_t, cstr_less> out_split_keys;
-  std::vector<char*> group_storage;
+  map<char*, size_t, cstr_less> out_split_keys;
+  vector<char*> group_storage;
   char* group_storage_next;
   char* group_storage_end;
-  //typedef std::tr1::unordered_map<char*, std::vector<std::string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
-  typedef std::map<char*, std::vector<std::string>, multi_cstr_less> data_t;
+  //typedef tr1::unordered_map<char*, vector<string>, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  typedef map<char*, vector<string>, multi_cstr_less> data_t;
   data_t data;
 
   basic_splitter_t() : default_action(SP_REMOVE), first_line(1), column(0),
@@ -680,7 +675,7 @@ template<typename input_base_t, typename output_base_t> class basic_sorter_t : p
 
 protected:
   struct sorts_t {
-    std::string key;
+    string key;
     uint8_t type;
   };
   struct row_t {
@@ -689,28 +684,28 @@ protected:
     size_t other_index;
   };
   struct compare {
-    const std::vector<sorts_t>& sorts;
-    compare(const std::vector<sorts_t>& sorts) : sorts(sorts) {}
+    const vector<sorts_t>& sorts;
+    compare(const vector<sorts_t>& sorts) : sorts(sorts) {}
     bool operator() (const row_t& lhs, const row_t& rhs);
   };
 
-  std::vector<sorts_t> sorts;
+  vector<sorts_t> sorts;
 
-  std::vector<size_t> columns; //index into sorts or max for other
-  std::vector<size_t>::const_iterator ci;
+  vector<size_t> columns; //index into sorts or max for other
+  vector<size_t>::const_iterator ci;
   size_t sorts_found;
   bool first_line;
 
   char** sort_buf;
   char** sort_buf_end;
   size_t sort_buf_len;
-  std::vector<char*> sort_storage;
+  vector<char*> sort_storage;
   char* sort_next;
   char* sort_end;
-  std::vector<char*> other_storage;
+  vector<char*> other_storage;
   char* other_next;
   char* other_end;
-  std::vector<row_t> rows;
+  vector<row_t> rows;
 
   basic_sorter_t() : sorts_found(0), first_line(1), sort_buf(0), sort_buf_end(0), sort_next(0), sort_end(0), other_next(0), other_end(0) {}
   ~basic_sorter_t();
@@ -741,22 +736,22 @@ template<typename input_base_t, typename output_base_t> class basic_row_joiner_t
 
 protected:
   struct data_t {
-    std::vector<char*> data;
-    std::vector<char*>::iterator i;
+    vector<char*> data;
+    vector<char*>::iterator i;
     char* next;
     char* end;
   };
 
-  std::vector<std::string> table_name;
+  vector<string> table_name;
   size_t table;
 
   bool first_line;
   bool more_lines;
   size_t column;
-  std::vector<size_t> num_columns;
-  std::vector<std::string> keys;
+  vector<size_t> num_columns;
+  vector<string> keys;
 
-  std::vector<data_t> data;
+  vector<data_t> data;
 
   basic_row_joiner_t() {}
   ~basic_row_joiner_t();
@@ -804,22 +799,22 @@ struct column_info_t {
 class col_match_joiner : public pass {
   //setup info
   pass* out;
-  std::map<std::string, uint32_t> group_col;
+  map<string, uint32_t> group_col;
   int end_stream;
 
   //incoming table info
   int cur_stream;
   int cur_stream_column;
-  std::vector<column_info_t> column_info;
+  vector<column_info_t> column_info;
   const char* cur_group;
   const char* cur_group_cap;
 
   //outgoing table info
-  std::map<std::string> keys;
-  std::vector<col_match_joiner_group_storage_t> group_storage;
+  map<string> keys;
+  vector<col_match_joiner_group_storage_t> group_storage;
   size_t next_group_row;
-  std::tr1::unordered_map<const char*, size_t> group_row;
-  std::vector<std::vector<col_match_joiner_data_storage_t> > data_storage; //column then block of data
+  tr1::unordered_map<const char*, size_t> group_row;
+  vector<vector<col_match_joiner_data_storage_t> > data_storage; //column then block of data
 
 public:
   col_match_joiner();
@@ -853,7 +848,7 @@ protected:
   size_t num_columns;
   size_t columns_with_data;
   uint32_t* has_data;
-  std::vector<char*> data;
+  vector<char*> data;
   char* next;
   char* end;
 
@@ -885,17 +880,17 @@ template<typename input_base_t, typename output_base_t> class basic_combiner_t :
   basic_combiner_t& operator=(const basic_combiner_t<input_base_t, output_base_t>& other);
 
 protected:
-  std::vector<std::pair<pcre*, std::string> > pairs;
+  vector<pair<pcre*, string> > pairs;
   bool first_row;
   int column;
-  std::vector<int> remap_indexes;
-  std::vector<std::string> tokens;
+  vector<int> remap_indexes;
+  vector<string> tokens;
 
   basic_combiner_t() : first_row(1), column(0) {}
-  ~basic_combiner_t() { for(std::vector<std::pair<pcre*, std::string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) pcre_free((*i).first); }
+  ~basic_combiner_t() { for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) pcre_free((*i).first); }
 
 public:
-  void reinit(int more_passes = 0) { for(std::vector<std::pair<pcre*, std::string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) { pcre_free((*i).first); } pairs.clear(); reinit_state(); this->reinit_output_if(more_passes); }
+  void reinit(int more_passes = 0) { for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) { pcre_free((*i).first); } pairs.clear(); reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0) { first_row = 1; column = 0; remap_indexes.clear(); tokens.clear(); this->reinit_output_state_if(more_passes); }
   void add_pair(const char* from, const char* to);
   void process_token(const char* token, size_t len);
@@ -937,19 +932,19 @@ protected:
     double min;
     double max;
 
-    data_t() : missing(0), count(0), sum(0.0), sum_of_squares(0.0), min(std::numeric_limits<double>::infinity()), max(-std::numeric_limits<double>::infinity()) {}
+    data_t() : missing(0), count(0), sum(0.0), sum_of_squares(0.0), min(numeric_limits<double>::infinity()), max(-numeric_limits<double>::infinity()) {}
   };
 
-  std::vector<pcre*> pre_sorted_group_regexes;
-  std::vector<pcre*> group_regexes;
-  std::vector<std::pair<pcre*, uint32_t> > data_regexes;
-  std::vector<pcre*> exception_regexes;
+  vector<pcre*> pre_sorted_group_regexes;
+  vector<pcre*> group_regexes;
+  vector<pair<pcre*, uint32_t> > data_regexes;
+  vector<pcre*> exception_regexes;
 
   bool first_line;
-  std::vector<uint32_t> column_flags;
+  vector<uint32_t> column_flags;
   size_t num_data_columns;
 
-  std::vector<uint32_t>::const_iterator cfi;
+  vector<uint32_t>::const_iterator cfi;
   double* values;
   double* vi;
   char* pre_sorted_group_tokens;
@@ -961,14 +956,14 @@ protected:
 
   char* pre_sorted_group_storage;
   char* pre_sorted_group_storage_end;
-  std::vector<char*> group_storage;
+  vector<char*> group_storage;
   char* group_storage_next;
   char* group_storage_end;
-  std::vector<data_t*> data_storage;
+  vector<data_t*> data_storage;
   data_t* data_storage_next;
   data_t* data_storage_end;
-  //typedef std::tr1::unordered_map<char*, data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
-  typedef std::map<char*, data_t*, multi_cstr_less> data_map_t;
+  //typedef tr1::unordered_map<char*, data_t*, multi_cstr_hash, multi_cstr_equal_to> data_t;
+  typedef map<char*, data_t*, multi_cstr_less> data_map_t;
   data_map_t data;
 
   basic_summarizer_t() : values(0), pre_sorted_group_tokens(0), group_tokens(0), pre_sorted_group_storage(0) { reinit(); }
@@ -1005,27 +1000,27 @@ template<typename input_base_t, typename output_base_t> class basic_range_stacke
 
 protected:
   struct range_t {
-    std::string start_name;
+    string start_name;
     size_t start_col_index;
-    std::string stop_name;
+    string stop_name;
     size_t stop_col_index;
-    std::string new_col_name;
+    string new_col_name;
     double cur_val;
   };
 
   struct col_t { size_t col; double val; };
 
-  std::vector<range_t> ranges;
+  vector<range_t> ranges;
   bool first_row;
   size_t column;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
-  std::vector<std::pair<char*, char*> > leave_tokens;
+  vector<col_t> columns;
+  typename vector<col_t>::iterator ci;
+  vector<pair<char*, char*> > leave_tokens;
   size_t leave_tokens_index;
   char* leave_tokens_next;
 
   basic_range_stacker_t() : first_row(1), column(0), leave_tokens_index(0), leave_tokens_next(0) {}
-  ~basic_range_stacker_t() { for(std::vector<std::pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first; }
+  ~basic_range_stacker_t() { for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first; }
 
 public:
   void reinit(int more_passes = 0) { ranges.clear(); reinit_state(); this->reinit_output_if(more_passes); }
@@ -1064,10 +1059,10 @@ protected:
 
   struct conv_t { int from; int to; };
 
-  std::vector<regex_base_conv_t> regex_base_conv;
+  vector<regex_base_conv_t> regex_base_conv;
   bool first_row;
   int column;
-  std::vector<conv_t> conv;
+  vector<conv_t> conv;
 
   basic_base_converter_t() : first_row(1), column(0) {}
   ~basic_base_converter_t() {}
@@ -1106,26 +1101,26 @@ protected:
     treatment_data_t() : count(0), sum(0.0), sum_of_squares(0.0) {}
   };
 
-  std::vector<pcre*> group_regexes;
-  std::vector<pcre*> data_regexes;
-  std::vector<pcre*> exception_regexes;
+  vector<pcre*> group_regexes;
+  vector<pcre*> data_regexes;
+  vector<pcre*> exception_regexes;
 
   bool first_line;
-  std::vector<char> column_type; // 0 = ignore, 1 = group, 2 = data
-  std::vector<std::string> data_keywords;
+  vector<char> column_type; // 0 = ignore, 1 = group, 2 = data
+  vector<string> data_keywords;
 
-  std::vector<char>::const_iterator cti;
+  vector<char>::const_iterator cti;
   char* group_tokens;
   char* group_tokens_next;
   char* group_tokens_end;
-  std::vector<char*> group_storage;
+  vector<char*> group_storage;
   char* group_storage_next;
   char* group_storage_end;
-  typedef std::map<char*, size_t, multi_cstr_less> groups_t;
+  typedef map<char*, size_t, multi_cstr_less> groups_t;
   groups_t groups;
   double* values;
   double* vi;
-  typedef std::vector<treatment_data_t*> data_t;
+  typedef vector<treatment_data_t*> data_t;
   data_t data; // keyword fast, group/treatment slow
 
   basic_variance_analyzer_t() : group_tokens(0), values(0) { reinit(); }
@@ -1163,7 +1158,7 @@ class substituter {
     char* end;
     pcre* from;
     pcre_extra* from_extra;
-    std::string to;
+    string to;
     int rc;
   } *data;
 
@@ -1188,14 +1183,14 @@ public:
     else { data = new data_t; data->buf = new char[2048]; data->end = data->buf + 2048; data->rc = 1; }
 
     const char* err; int err_off;
-    data->from = pcre_compile(from, 0, &err, &err_off, 0); if(!data->from) throw std::runtime_error("substitutor can't compile from regex");
-    data->from_extra = pcre_study(data->from, PCRE_STUDY_JIT_COMPILE, &err); if(!data->from_extra) throw std::runtime_error("substitutor can't study from");
+    data->from = pcre_compile(from, 0, &err, &err_off, 0); if(!data->from) throw runtime_error("substitutor can't compile from regex");
+    data->from_extra = pcre_study(data->from, PCRE_STUDY_JIT_COMPILE, &err); if(!data->from_extra) throw runtime_error("substitutor can't study from");
     data->to = to;
   }
   c_str_and_len_t operator()(c_str_and_len_t in) {
     c_str_and_len_t ret(in);
     int ovector[30]; int rc = pcre_exec(data->from, data->from_extra, in.c_str, in.len, 0, 0, ovector, 30);
-    if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw std::runtime_error("substitutor exception match error"); }
+    if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("substitutor exception match error"); }
     else {
       char* next = data->buf; if(!rc) rc = 10;
       generate_substitution(in.c_str, data->to.c_str(), ovector, rc, data->buf, next, data->end);
@@ -1220,31 +1215,31 @@ protected:
   struct inst_t {
     pcre* regex;
     bool remove_source;
-    std::string new_key;
+    string new_key;
     op_t op;
   };
 
-  struct col_t { size_t col; bool passthrough; std::vector<op_t> ops; };
+  struct col_t { size_t col; bool passthrough; vector<op_t> ops; };
 
-  std::vector<inst_t> insts;
+  vector<inst_t> insts;
   bool first_row;
   size_t column;
   char* buf;
   char* end;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
+  vector<col_t> columns;
+  typename vector<col_t>::iterator ci;
 
   basic_unary_col_adder_t() : first_row(1), column(0), buf(new char[2048]), end(buf + 2048) {}
-  ~basic_unary_col_adder_t() { for(typename std::vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); delete[] buf; }
+  ~basic_unary_col_adder_t() { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); delete[] buf; }
   c_str_and_len_t get_in_value(const char* token, size_t len, c_str_and_len_t* dummy) { return c_str_and_len_t(token, len); }
   c_str_and_len_t get_in_value(double token, char* buf, c_str_and_len_t* dummy) { c_str_and_len_t ret; ret.c_str = buf; ret.len = dtostr(token, buf); return ret; }
-  double get_in_value(const char* token, size_t len, double* dummy) { char* next; double ret = strtod(token, &next); if(next == token) ret = std::numeric_limits<double>::quiet_NaN(); return ret; }
+  double get_in_value(const char* token, size_t len, double* dummy) { char* next; double ret = strtod(token, &next); if(next == token) ret = numeric_limits<double>::quiet_NaN(); return ret; }
   double get_in_value(double token, char* buf, double* dummy) { return token; }
   using output_base_t::output_token;
   void output_token(c_str_and_len_t& val) { output_base_t::output_token(val.c_str, val.len); }
 
 public:
-  void reinit(int more_passes = 0) { for(typename std::vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); reinit_state(); this->reinit_output_if(more_passes); }
+  void reinit(int more_passes = 0) { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0) { first_row = 1; column = 0; delete[] buf; buf = new char[2048]; end = buf + 2048; columns.clear(); this->reinit_output_state_if(more_passes); }
   void add(const char* regex, const char* new_key, const op_t& op, bool remove_source = 0);
   void process_token(const char* token, size_t len);
@@ -1274,27 +1269,27 @@ protected:
   struct inst_t {
     pcre* regex;
     bool remove_source;
-    std::string other_key;
+    string other_key;
     bool remove_other;
-    std::string new_key;
+    string new_key;
     op_t op;
   };
 
   struct col_info_t { size_t index; bool need_double; bool need_c_str; bool passthrough; };
-  struct new_col_info_t { size_t other_col; std::string new_key; op_t* op; };
+  struct new_col_info_t { size_t other_col; string new_key; op_t* op; };
   struct col_t { size_t col; bool need_double; double double_val; bool need_c_str; c_str_and_len_t c_str_val; const char* c_str_end; bool passthrough; };
   struct new_col_t { size_t col_index; size_t other_col_index; op_t op; };
 
-  std::vector<inst_t> insts;
+  vector<inst_t> insts;
   bool first_row;
   size_t column;
-  std::vector<char*> key_storage;
+  vector<char*> key_storage;
   char* key_storage_next;
   char* key_storage_end;
-  std::vector<char*> keys;
-  std::vector<col_t> columns;
-  typename std::vector<col_t>::iterator ci;
-  std::vector<new_col_t> new_columns;
+  vector<char*> keys;
+  vector<col_t> columns;
+  typename vector<col_t>::iterator ci;
+  vector<new_col_t> new_columns;
 
   basic_binary_col_adder_t() { reinit(); }
   ~basic_binary_col_adder_t();
@@ -1304,7 +1299,7 @@ protected:
   void output_token(c_str_and_len_t& val) { output_token(val.c_str, val.len); }
 
 public:
-  void reinit(int more_passes = 0) { for(typename std::vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); this->reinit_state(); }
+  void reinit(int more_passes = 0) { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); this->reinit_state(); }
   void reinit_state(int more_passes = 0);
   void add(const char* regex, const char* other_key, const char* new_key, const op_t& op, bool remove_source = 0, bool remove_other = 0);
   void process_token(const char* token, size_t len);
@@ -1653,7 +1648,7 @@ template<typename input_base_t> void basic_subset_tee_t<input_base_t>::add_excep
 template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_token(const char* token, size_t len)
 {
   if(first_row) {
-    for(typename std::map<dynamic_pass_t*, dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
+    for(typename map<dynamic_pass_t*, dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
       dest_data_t& d = (*di).second;
 
       bool add = 0;
@@ -1708,7 +1703,7 @@ template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_t
 template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_line()
 {
   first_row = 0;
-  for(typename std::map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi)
+  for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi)
     if((*ddi).second.has_data)
       (*ddi).first->process_line();
   column = 0;
@@ -1730,7 +1725,7 @@ template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::reinit_s
   end = 0;
   if(more_passes == 0) return;
   if(more_passes > 0) --more_passes;
-  for(typename std::vector<dynamic_pass_t*>::iterator i = out.begin(); i != out.end(); ++i)
+  for(typename vector<dynamic_pass_t*>::iterator i = out.begin(); i != out.end(); ++i)
     (*i)->reinit_state(more_passes);
 }
 
@@ -1828,7 +1823,7 @@ template<typename input_base_t, typename output_base_t> basic_stacker_t<input_ba
   for(typename vector<pair<char*, char*> >::iterator i = stack_tokens.begin(); i != stack_tokens.end(); ++i) delete[] (*i).first;
 }
 
-template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::resize(size_t len, std::vector<std::pair<char*, char*> >& tokens, size_t& index, char*& next)
+template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::resize(size_t len, vector<pair<char*, char*> >& tokens, size_t& index, char*& next)
 {
   if(next) { *next++ = '\x03'; ++index; }
   if(index < tokens.size()) {
