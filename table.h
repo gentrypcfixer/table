@@ -143,7 +143,7 @@ class arg_fetcher : public setting_fetcher {
 public:
   arg_fetcher(int argc, char** argv, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(argc), argv((const char**)argv), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
   arg_fetcher(int argc, const char** argv, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(argc), argv(argv), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
-  arg_fetcher(const char* arg, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(1), argv(&arg), split_csv_values(split_csv_values), arg(0), argp(argc ? argv[0] : 0), buf(0) { get_next(); }
+  arg_fetcher(const char* arg, bool (*split_csv_values)(int, const char*, size_t) = 0) : argc(0), argv(0), split_csv_values(split_csv_values), arg(0), argp(arg), buf(0) { get_next(); }
   ~arg_fetcher() { while(files.size()) { delete files.top(); files.pop(); } }
 
   void rewind() { while(files.size()) { delete files.top(); files.pop(); } arg = 0; argp = argc ? argv[0] : 0; get_next(); }

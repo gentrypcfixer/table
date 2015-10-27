@@ -182,7 +182,7 @@ void arg_fetcher::get_next()
       while(1) {
         int c = in->sbumpc();
         if(state == 0) { // first character
-          if(c == char_traits<char>::eof()) { delete in; files.pop(); break; }
+          if(c == char_traits<char>::eof()) { delete in; files.pop(); cur_type = 0; break; }
           else if(isspace(c)) {}
           else if(c == '@') { next = buf; ++state; }
           else if(c == '-') { next = buf; cur_type = st_dash; key_ = val_ = 0; key_len_ = val_len_ = 0; state = 10; }
@@ -338,7 +338,7 @@ void arg_fetcher::get_next()
 
     if(!argp) { cur_type = 0; key_ = 0; key_len_ = 0; val_ = 0; val_len_ = 0; return; }
 
-    if(argp != argv[arg]) {
+    if(cur_type & st_more_split_vals) {
       val_len_ = strcspn(++argp, ", \t");
       val_ = argp;
       if(argp[val_len_] == ',') { argp += val_len_; cur_type &= ~st_first_split_val; }
