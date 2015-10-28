@@ -2,7 +2,7 @@
 #define table_h_
 
 #define TABLE_MAJOR_VER 3
-#define TABLE_MINOR_VER 0
+#define TABLE_MINOR_VER 1
 
 #include <string>
 #include <sstream>
@@ -269,7 +269,7 @@ protected:
   ~file_writer_t() { flush_(1); if(fd >= 0) ::close(fd); }
 
 public:
-  void open(const char* path) { if(fd < 0) close(); this->fd = ::open(path, O_WRONLY | O_TRUNC); if(fd < 0) throw runtime_error("can't open output file"); }
+  void open(const char* path) { if(fd < 0) close(); this->fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT); if(fd < 0) throw runtime_error("can't open output file"); }
   void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
 };
 
