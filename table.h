@@ -1,8 +1,8 @@
 #ifndef table_h_
 #define table_h_
 
-#define TABLE_MAJOR_VER 3
-#define TABLE_MINOR_VER 2
+#define TABLE_MAJOR_VER 4
+#define TABLE_MINOR_VER 0
 
 #include <string>
 #include <sstream>
@@ -23,6 +23,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 
 #if(PCRE_MAJOR < 8 || (PCRE_MAJOR == 8 && PCRE_MINOR < 20))
@@ -211,67 +214,127 @@ public:
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-class writer_base_t
+template<typename out_t> class buffered_writer_t : public out_t
 {
-  writer_base_t(const writer_base_t& other);
-  writer_base_t& operator=(const writer_base_t& other);
+  buffered_writer_t(const buffered_writer_t& other);
+  buffered_writer_t& operator=(const buffered_writer_t& other);
 
 protected:
-  static const size_t fd_buf_cap = 32 * 1024;
-  int fd;
-  char fd_buf[fd_buf_cap];
-  char* fd_next;
-  char* fd_end;
+  static const size_t buf_cap = 32 * 1024;
+  char buf[buf_cap];
+  char* next;
+  char* end;
 
-  writer_base_t() : fd(-1), fd_next(fd_buf), fd_end(fd_buf + fd_buf_cap) {}
-  void flush_(bool silent = 0) {
-    for(char* begin = fd_buf; fd_next != begin;) {
-      const size_t len = fd_next - begin;
-      ssize_t num_written = write(fd, begin, len);
-      if(num_written == (ssize_t)len) { fd_next = fd_buf; break; }
-      else if(num_written >= 0) { begin += num_written; }
-      else if(errno == EINTR) { continue; }
-      else if(!silent) { throw runtime_error("unable to write"); }
-    }
-    fd_next = fd_buf;
-  }
-  void output(char c) { *fd_next++ = c; if(fd_next == fd_end) flush(); }
-  void output(const char* token, size_t len) {
+public:
+  buffered_writer_t() : next(buf), end(buf + buf_cap) {}
+  ~buffered_writer_t() { if(next != buf) out_t::write(buf, next - buf, 1); }
+  void write(char c) { *next++ = c; if(next == end) { out_t::write(buf, next - buf); next = buf; } }
+  void write(const char* token, size_t len) {
     for(const char* tbegin = token; len;) {
-      const size_t rem = fd_end - fd_next;
+      if(next == buf && len >= buf_cap) { out_t::write(token, buf_cap); tbegin += buf_cap; len -= buf_cap; continue; }
+      const size_t rem = end - next;
       size_t l = len > rem ? rem : len;
-      memcpy(fd_next, tbegin, l); fd_next += l;
-      if(fd_next == fd_end) { flush(); tbegin += l; len -= l; }
+      memcpy(next, tbegin, l); next += l;
+      if(next == end) { out_t::write(buf, next - buf); next = buf; tbegin += l; len -= l; }
       else break;
     }
   }
-  void output(double token) {
-    if(fd_next + 32 < fd_end) { size_t len = dtostr(token, fd_next); fd_next += len; }
-    else { char buf[32]; size_t len = dtostr(token, buf); output(buf, len); }
+  void write(double token) {
+    if(next + 32 < end) { size_t len = dtostr(token, next); next += len; }
+    else { char buf[32]; size_t len = dtostr(token, buf); write(buf, len); }
   }
-
-public:
-  void flush() { flush_(); }
+  void flush() { if(next != buf) { out_t::write(buf, next - buf); next = buf; } }
 };
 
-class fd_writer_t : public writer_base_t
+template<typename out_t> class writer_pass_t
 {
 protected:
-  ~fd_writer_t() { flush_(1); }
-
-public:
-  void set_fd(int fd) { if(fd < 0) throw runtime_error("writer::invalid out"); this->fd = fd; }
+  buffered_writer_t<out_t> out;
+  void output(char c) { out.write(c); }
+  void output(const char* token, size_t len) { out.write(token, len); }
+  void output(double token) { out.write(token); }
+  void flush() { out.flush(); }
 };
 
-class file_writer_t : public writer_base_t
+class console_writer_t
 {
-protected:
-  ~file_writer_t() { flush_(1); if(fd >= 0) ::close(fd); }
+  console_writer_t(const console_writer_t& other);
+  console_writer_t& operator=(const console_writer_t& other);
+#ifdef _WIN32
+  HANDLE h;
+#else
+  int fd;
+#endif
 
 public:
-  void open(const char* path) { if(fd < 0) close(); this->fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
+#ifdef _WIN32
+  console_writer_t() : h(INVALID_HANDLE_VALUE) {}
+  void set_fd(int fd) {
+    if(fd == STDIN_FILENO) h = GetStdHandle(STD_INPUT_HANDLE);
+    else if(fd == STDOUT_FILENO) h = GetStdHandle(STD_OUTPUT_HANDLE);
+    else if(fd == STDERR_FILENO) h = GetStdHandle(STD_ERROR_HANDLE);
+    else throw runtime_error("invalid fd");
+  }
+  void write(const void* buf, size_t len, bool silent = 0) {
+    DWORD num_written; BOOL success = WriteFile(h, buf, len, &num_written, NULL);
+    if(!silent && (!success || num_written != len)) { throw runtime_error("unable to write"); }
+  }
+#else
+  console_writer_t() : fd(-1) {}
+  void set_fd(int fd) { if(fd < 0) throw runtime_error("invalid fd"); this->fd = fd; }
+  void write(const void* buf, size_t len, bool silent = 0) {
+    for(const char* begin = static_cast<const char*>(buf); len;) {
+      ssize_t num_written = ::write(fd, begin, len);
+      if(num_written == (ssize_t)len) { break; }
+      else if(num_written >= 0) { begin += num_written; len -= num_written; }
+      else if(errno == EINTR) {}
+      else if(!silent) { throw runtime_error("unable to write"); }
+    }
+  }
+#endif
+};
+
+class console_writer_pass_t : public writer_pass_t<console_writer_t> { public: void set_fd(int fd) { out.set_fd(fd); } };
+
+class file_writer_t
+{
+  file_writer_t(const file_writer_t& other);
+  file_writer_t& operator=(const file_writer_t& other);
+#ifdef _WIN32
+  HANDLE h;
+#else
+  int fd;
+#endif
+
+public:
+#ifdef _WIN32
+  file_writer_t() : h(INVALID_HANDLE_VALUE) {}
+  ~file_writer_t() { if(h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+  void open(const char* path) { if(h != INVALID_HANDLE_VALUE) close(); h = CreateFile(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if(h == INVALID_HANDLE_VALUE) throw runtime_error("can't open output file"); }
+  void write(const void* buf, size_t len, bool silent = 0) {
+    DWORD num_written; BOOL success = WriteFile(h, buf, len, &num_written, NULL);
+    if(!silent && (!success || num_written != len)) { throw runtime_error("unable to write"); }
+  }
+  void close() { if(h != INVALID_HANDLE_VALUE && !CloseHandle(h)) throw runtime_error("can't close output file"); h = INVALID_HANDLE_VALUE; }
+#else
+  int fd;
+  file_writer_t() : fd(-1) {}
+  ~file_writer_t() { if(fd >= 0) ::close(fd); }
+  void open(const char* path) { if(fd < 0) close(); fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
+  void write(const void* buf, size_t len, bool silent = 0) {
+    for(char* begin = fd_buf; len;) {
+      ssize_t num_written = ::write(fd, begin, len);
+      if(num_written == (ssize_t)len) { break; }
+      else if(num_written >= 0) { begin += num_written; len -= num_written; }
+      else if(errno == EINTR) { continue; }
+      else if(!silent) { throw runtime_error("unable to write"); }
+    }
+  }
   void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
+#endif
 };
+
+class file_writer_pass_t : public writer_pass_t<file_writer_t> { public: void open(const char* path) { out.open(path); } void close() { out.close(); } };
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -300,10 +363,10 @@ public:
   void process_stream() { if(line <= 19) process_data(); this->flush(); }
 };
 
-class tabular_writer : public basic_tabular_writer_t<empty_class_t, fd_writer_t> { public: tabular_writer() {} tabular_writer(int fd) { set_fd(fd); } };
-class dynamic_tabular_writer : public basic_tabular_writer_t<dynamic_pass_t, fd_writer_t> { public: dynamic_tabular_writer() {} dynamic_tabular_writer(int fd) { set_fd(fd); } };
-class tabular_file_writer : public basic_tabular_writer_t<empty_class_t, file_writer_t> { public: tabular_file_writer() {} tabular_file_writer(const char* path) { open(path); } };
-class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t, file_writer_t> { public: dynamic_tabular_file_writer() {} dynamic_tabular_file_writer(const char* path) { open(path); } };
+class tabular_writer : public basic_tabular_writer_t<empty_class_t, console_writer_pass_t> { public: tabular_writer() {} tabular_writer(int fd) { set_fd(fd); } };
+class dynamic_tabular_writer : public basic_tabular_writer_t<dynamic_pass_t, console_writer_pass_t> { public: dynamic_tabular_writer() {} dynamic_tabular_writer(int fd) { set_fd(fd); } };
+class tabular_file_writer : public basic_tabular_writer_t<empty_class_t, file_writer_pass_t> { public: tabular_file_writer() {} tabular_file_writer(const char* path) { open(path); } };
+class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t, file_writer_pass_t> { public: dynamic_tabular_file_writer() {} dynamic_tabular_file_writer(const char* path) { open(path); } };
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -341,10 +404,10 @@ public:
   }
 };
 
-class csv_writer : public basic_csv_writer_t<empty_class_t, fd_writer_t> { public: csv_writer() {} csv_writer(int fd) { set_fd(fd); } };
-class dynamic_csv_writer : public basic_csv_writer_t<dynamic_pass_t, fd_writer_t> { public: dynamic_csv_writer() {} dynamic_csv_writer(int fd) { set_fd(fd); } };
-class csv_file_writer : public basic_csv_writer_t<empty_class_t, file_writer_t> { public: csv_file_writer() {} csv_file_writer(const char* path) { open(path); } };
-class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_writer_t> { public: dynamic_csv_file_writer() {} dynamic_csv_file_writer(const char* path) { open(path); } };
+class csv_writer : public basic_csv_writer_t<empty_class_t, console_writer_pass_t> { public: csv_writer() {} csv_writer(int fd) { set_fd(fd); } };
+class dynamic_csv_writer : public basic_csv_writer_t<dynamic_pass_t, console_writer_pass_t> { public: dynamic_csv_writer() {} dynamic_csv_writer(int fd) { set_fd(fd); } };
+class csv_file_writer : public basic_csv_writer_t<empty_class_t, file_writer_pass_t> { public: csv_file_writer() {} csv_file_writer(const char* path) { open(path); } };
+class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_writer_pass_t> { public: dynamic_csv_file_writer() {} dynamic_csv_file_writer(const char* path) { open(path); } };
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
