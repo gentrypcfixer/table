@@ -414,49 +414,91 @@ class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_w
 // driver
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename output_base_t> class csv_reader_base_t : public output_base_t
+class console_reader_t
 {
-  csv_reader_base_t(const csv_reader_base_t<output_base_t>& other);
-  csv_reader_base_t& operator=(const csv_reader_base_t<output_base_t>& other);
+#ifdef _WIN32
+  HANDLE h;
+#else
+  int fd;
+#endif
+
+public:
+#ifdef _WIN32
+  console_reader_t() : h(INVALID_HANDLE_VALUE) {}
+  void set_fd(int fd) {
+    if(fd == STDIN_FILENO) h = GetStdHandle(STD_INPUT_HANDLE);
+    else if(fd == STDOUT_FILENO) h = GetStdHandle(STD_OUTPUT_HANDLE);
+    else if(fd == STDERR_FILENO) h = GetStdHandle(STD_ERROR_HANDLE);
+    else throw runtime_error("invalid fd");
+  }
+  ssize_t read(void* buf, size_t len) { DWORD num_read; if(!ReadFile(h, buf, len, &num_read, NULL)) throw runtime_error("couldn't read"); return num_read; }
+#else
+  console_reader_t() : fd(-1), return_on_eagain(0) {}
+  void set_fd(int fd) { this->fd = fd; }
+  ssize_t read(void* buf, size_t len) { ssize_t num_read = ::read(fd, buf, len); if(num_read < 0) throw runtime_error("couldn't read"); return num_read; }
+#endif
+};
+
+class file_reader_t
+{
+#ifdef _WIN32
+  HANDLE h;
+#else
+  int fd;
+#endif
+
+public:
+#ifdef _WIN32
+  ~file_reader_t() { if(h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+  file_reader_t() : h(INVALID_HANDLE_VALUE) {}
+  void open(const char* path) { if(h != INVALID_HANDLE_VALUE) close(); h = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL); if(h == INVALID_HANDLE_VALUE) throw runtime_error("can't open output file"); }
+  ssize_t read(void* buf, size_t len) { DWORD num_read; if(!ReadFile(h, buf, len, &num_read, NULL)) throw runtime_error("couldn't read"); return num_read; }
+  void close() { if(h != INVALID_HANDLE_VALUE && !CloseHandle(h)) throw runtime_error("can't close output file"); h = INVALID_HANDLE_VALUE; }
+#else
+  file_reader_t() : fd(-1) {}
+  ~file_reader_t() { if(fd >= 0) ::close(fd); }
+  void open(const char* path) { if(fd < 0) ::close(fd); fd = ::open(path, O_RDONLY); if(fd < 0) throw runtime_error("can't open output file"); }
+  ssize_t read(void* buf, size_t len) { ssize_t num_read = ::read(fd, buf, len); if(num_read < 0) throw runtime_error("couldn't read"); return num_read; }
+  void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
+#endif
+};
+
+template<typename reader_t, typename output_base_t> class csv_reader_base_t : public output_base_t
+{
+  csv_reader_base_t(const csv_reader_base_t<reader_t, output_base_t>& other);
+  csv_reader_base_t& operator=(const csv_reader_base_t<reader_t, output_base_t>& other);
 
 protected:
-  int fd;
+  reader_t r;
   size_t line;
   size_t num_keys;
   size_t column;
-  bool return_on_eagain;
   char* buf;
   char* data_end;
   char* buf_end;
 
-  csv_reader_base_t() : fd(-1), line(0), num_keys(0), column(0), return_on_eagain(0), buf(0) {}
+  csv_reader_base_t() : line(0), num_keys(0), column(0), buf(0) {}
   ~csv_reader_base_t() { delete[] buf; }
   void process(bool eof);
 
 public:
   void reinit(int more_passes = 0) { reinit_state(); this->reinit_output_if(more_passes); }
-  void reinit_state(int more_passes = 0) { line = 0; num_keys = 0; column = 0; return_on_eagain = 0; this->reinit_output_state_if(more_passes); }
-  void set_return_on_eagain(bool val) { return_on_eagain = val; }
+  void reinit_state(int more_passes = 0) { line = 0; num_keys = 0; column = 0; this->reinit_output_state_if(more_passes); }
   int run();
 };
 
-template<typename output_base_t> class basic_csv_fd_reader_t : public csv_reader_base_t<output_base_t>
+template<typename out_t> class csv_reader : public csv_reader_base_t<console_reader_t, single_output_pass_class_t<out_t> >
 {
 public:
-  void set_fd(int fd) { this->fd = fd; }
+  void set_fd(int fd) { this->r.set_fd(fd); }
 };
 
-template<typename out_t> class csv_reader : public basic_csv_fd_reader_t<single_output_pass_class_t<out_t> > {};
-
-template<typename output_base_t> class basic_csv_file_reader_t : public csv_reader_base_t<output_base_t>
+template<typename out_t> class csv_file_reader : public csv_reader_base_t<file_reader_t, single_output_pass_class_t<out_t> >
 {
 public:
-  ~basic_csv_file_reader_t() { if(this->fd >= 0) ::close(this->fd); }
-  void open(const char* path) { if(this->fd < 0) ::close(this->fd); this->fd = ::open(path, O_RDONLY); if(this->fd < 0) throw runtime_error("can't open output file"); }
-  void close() { if(this->fd >= 0 && ::close(this->fd)) throw runtime_error("can't close output file"); }
+  void open(const char* path) { this->r.open(path); }
+  void close() { this->r.close(); }
 };
-
-template<typename out_t> class csv_file_reader : public basic_csv_file_reader_t<single_output_pass_class_t<out_t> > {};
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1480,7 +1522,7 @@ template<typename input_base_t, typename output_base_t> void basic_tabular_write
 // driver
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename output_base_t> void csv_reader_base_t<output_base_t>::process(bool eof)
+template<typename reader_t, typename output_base_t> void csv_reader_base_t<reader_t, output_base_t>::process(bool eof)
 {
   for(const char* start = buf; 1;) { // tokens
     const char* end = start;
@@ -1510,10 +1552,8 @@ template<typename output_base_t> void csv_reader_base_t<output_base_t>::process(
   }
 }
 
-template<typename output_base_t> int csv_reader_base_t<output_base_t>::run()
+template<typename reader_t, typename output_base_t> int csv_reader_base_t<reader_t, output_base_t>::run()
 {
-  if(fd < 0) throw runtime_error("no fd");
-
   const size_t read_size = 32 * 1024;
 
   if(!buf) {
@@ -1524,14 +1564,8 @@ template<typename output_base_t> int csv_reader_base_t<output_base_t>::run()
 
   ssize_t num_read; do {
     if(data_end + read_size + 1 > buf_end) resize_buffer(buf, data_end, buf_end, read_size);
-    num_read = ::read(fd, data_end, read_size);
-    if(num_read < 0) {
-      if(errno != EAGAIN) throw runtime_error("couldn't read");
-      if(return_on_eagain) { return 1; }
-      else continue;
-    }
-    else data_end += num_read;
-
+    num_read = r.read(data_end, read_size);
+    data_end += num_read;
     process(num_read == 0);
   } while(num_read > 0);
 
@@ -1542,6 +1576,7 @@ template<typename output_base_t> int csv_reader_base_t<output_base_t>::run()
 
   return num_read;
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // threader
