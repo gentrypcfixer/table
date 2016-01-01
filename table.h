@@ -27,6 +27,10 @@
 #include <windows.h>
 #endif
 
+#ifndef O_BINARY
+# define O_BINARY 0
+# define O_TEXT 0
+#endif
 
 #if(PCRE_MAJOR < 8 || (PCRE_MAJOR == 8 && PCRE_MINOR < 20))
 #define PCRE_STUDY_JIT_COMPILE 0
@@ -320,7 +324,7 @@ public:
   int fd;
   file_writer_t() : fd(-1) {}
   ~file_writer_t() { if(fd >= 0) ::close(fd); }
-  void open(const char* path) { if(fd < 0) close(); fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
+  void open(const char* path) { if(fd < 0) close(); fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
   void write(const void* buf, size_t len, bool silent = 0) {
     for(char* begin = fd_buf; len;) {
       ssize_t num_written = ::write(fd, begin, len);
@@ -457,7 +461,7 @@ public:
 #else
   file_reader_t() : fd(-1) {}
   ~file_reader_t() { if(fd >= 0) ::close(fd); }
-  void open(const char* path) { if(fd < 0) ::close(fd); fd = ::open(path, O_RDONLY); if(fd < 0) throw runtime_error("can't open output file"); }
+  void open(const char* path) { if(fd < 0) ::close(fd); fd = ::open(path, O_RDONLY | O_BINARY); if(fd < 0) throw runtime_error("can't open output file"); }
   ssize_t read(void* buf, size_t len) { ssize_t num_read = ::read(fd, buf, len); if(num_read < 0) throw runtime_error("couldn't read"); return num_read; }
   void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
 #endif
