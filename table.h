@@ -169,6 +169,8 @@ public:
   virtual ~dynamic_pass_t() {}
   virtual void reinit(int more_passes = 0) = 0;
   virtual void reinit_state(int more_passes = 0) = 0;
+  virtual void process_key(const char* token, size_t len) = 0;
+  virtual void process_keys() = 0;
   virtual void process_token(const char* token, size_t len) = 0;
   virtual void process_token(double token) = 0;
   virtual void process_line() = 0;
@@ -186,6 +188,8 @@ protected:
 
   void reinit_output_if(int more_passes = 0) { if(more_passes > 0) out.reinit(--more_passes); else if(more_passes < 0) out.reinit(more_passes); }
   void reinit_output_state_if(int more_passes = 0) { if(more_passes > 0) out.reinit_state(--more_passes); else if(more_passes < 0) out.reinit_state(more_passes); }
+  void output_key(const char* token, size_t len) { out.process_key(token, len); }
+  void output_keys() { out.process_keys(); }
   void output_token(const char* token, size_t len) { out.process_token(token, len); }
   void output_token(double token) { out.process_token(token); }
   void output_line() { out.process_line(); }
@@ -201,6 +205,8 @@ protected:
 
   void reinit_output_if(int more_passes = 0) { if(more_passes > 0) out->reinit(--more_passes); else if(more_passes < 0) out->reinit(more_passes); }
   void reinit_output_state_if(int more_passes = 0) { if(more_passes > 0) out->reinit_state(--more_passes); else if(more_passes < 0) out->reinit_state(more_passes); }
+  void output_key(const char* token, size_t len) { out->process_key(token, len); }
+  void output_keys() { out->process_keys(); }
   void output_token(const char* token, size_t len) { out->process_token(token, len); }
   void output_token(double token) { out->process_token(token); }
   void output_line() { out->process_line(); }
@@ -348,7 +354,7 @@ class file_writer_pass_t : public writer_pass_t<file_writer_t> { public: void op
 template<typename input_base_t, typename output_base_t> class basic_tabular_writer_t : public input_base_t, public output_base_t
 {
 protected:
-  int line;
+  size_t line;
   size_t column;
   vector<size_t> max_width;
   vector<char*> data;
@@ -361,9 +367,11 @@ protected:
 public:
   void reinit(int more_passes = 0) { reinit_state(); }
   void reinit_state(int more_passes = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys() { this->output('\n'); ++line; column = 0; }
   void process_token(const char* token, size_t len);
   void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
-  void process_line() { if(line == 19) process_data(); else if(!line || line > 19) this->output('\n'); ++line; column = 0; }
+  void process_line() { if(line == 19) process_data(); else if(line > 19) this->output('\n'); ++line; column = 0; }
   void process_stream() { if(line <= 19) process_data(); this->flush(); }
 };
 
@@ -384,16 +392,17 @@ protected:
   int num_columns;
   int column;
 
-  basic_csv_writer_t() : line(0), num_columns(0), column(0) {}
+  basic_csv_writer_t() : column(0) {}
 
 public:
   void reinit(int more_passes = 0) { reinit_state(); }
-  void reinit_state(int more_passes = 0) { line = 0; num_columns = 0; column = 0; }
+  void reinit_state(int more_passes = 0) { column = 0; }
+  void process_key(const char* token, size_t len) { if(column) output_base_t::output(','); output_base_t::output(token, len); ++column; }
+  void process_keys() { num_columns = column; output_base_t::output('\n'); column = 0; line = 1; }
   void process_token(const char* token, size_t len) { if(column) output_base_t::output(','); output_base_t::output(token, len); ++column; }
   void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
   void process_line() {
-    if(!line) { num_columns = column; }
-    else if(column != num_columns) {
+    if(column != num_columns) {
       stringstream msg; msg << "csv_writer: line " << line << " (zero's based) has " << column << " columns instead of " << num_columns;
       throw runtime_error(msg.str());
     }
@@ -478,11 +487,14 @@ protected:
   size_t num_keys;
   size_t column;
   char* buf;
+  const char* start;
   char* data_end;
   char* buf_end;
+  bool in_keys;
 
-  csv_reader_base_t() : line(0), num_keys(0), column(0), buf(0) {}
+  csv_reader_base_t() : buf(0) {}
   ~csv_reader_base_t() { delete[] buf; }
+  void process_keys(bool eof);
   void process(bool eof);
 
 public:
@@ -541,6 +553,8 @@ protected:
 public:
   void reinit(int more_passes = 0) { reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -580,19 +594,20 @@ protected:
 
   map<dynamic_pass_t*, dest_data_t> dest_data;
   typename map<dynamic_pass_t*, dest_data_t>::iterator ddi;
-  bool first_row;
   int column;
   vector<pair<int, dynamic_pass_t*> > dest;
   vector<pair<int, dynamic_pass_t*> >::iterator di;
 
-  basic_subset_tee_t() : ddi(dest_data.end()), first_row(1), column(0) {}
+  basic_subset_tee_t() : ddi(dest_data.end()), column(0) {}
 
 public:
   void reinit(int more_passes = 0) { dest_data.clear(); ddi = dest_data.end(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit(more_passes); }
-  void reinit_state(int more_passes = 0) { first_row = 1; column = 0; this->dest.clear(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit_state(more_passes); }
-  void set_dest(dynamic_pass_t& dest) { ddi = dest_data.insert(map<dynamic_pass_t*, dest_data_t>::value_type(&dest, dest_data_t())).first; }
+  void reinit_state(int more_passes = 0) { column = 0; this->dest.clear(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) ddi->reinit_state(more_passes); }
+  void set_dest(dynamic_pass_t& dest) { ddi = dest_data.insert(typename map<dynamic_pass_t*, dest_data_t>::value_type(&dest, dest_data_t())).first; }
   void add_data(bool regex, const char* key);
   void add_exception(bool regex, const char* key);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -613,19 +628,20 @@ template<typename input_base_t> class basic_ordered_tee_t : public input_base_t 
 
 protected:
   vector<dynamic_pass_t*> out;
-  bool first_row;
   int num_columns;
   vector<char*> data;
   char* next;
   char* end;
 
-  basic_ordered_tee_t() : first_row(1), num_columns(0), next(0), end(0) {}
+  basic_ordered_tee_t() : num_columns(0), next(0), end(0) {}
   ~basic_ordered_tee_t() { for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i; }
 
 public:
   void reinit(int more_passes = 0) { out.clear(); reinit_state(); if(more_passes == 0) return; if(more_passes > 0) --more_passes; for(typename vector<dynamic_pass_t*>::iterator i = out.begin(); i != out.end(); ++i) (*i)->reinit(more_passes); }
   void reinit_state(int more_passes = 0);
   void add_out(dynamic_pass_t& out) { this->out.push_back(&out); }
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -664,7 +680,6 @@ protected:
   vector<regex_stack_action_t> regex_actions;
 
   //header information
-  bool first_line;
   vector<string> stack_keys;
   vector<stack_action_e> actions;
   size_t last_leave;
@@ -679,7 +694,7 @@ protected:
   size_t stack_tokens_index;
   char* stack_tokens_next;
 
-  basic_stacker_t() : default_action(ST_REMOVE), first_line(1), last_leave(0), column(0), stack_column(0), leave_tokens_index(0), leave_tokens_next(0), stack_tokens_index(0), stack_tokens_next(0) {}
+  basic_stacker_t() : default_action(ST_REMOVE), last_leave(0), column(0), stack_column(0), leave_tokens_index(0), leave_tokens_next(0), stack_tokens_index(0), stack_tokens_next(0) {}
   ~basic_stacker_t();
   void resize(size_t len, vector<pair<char*, char*> >& tokens, size_t& index, char*& next);
   void process_leave_tokens();
@@ -690,6 +705,8 @@ public:
   void reinit_state(int more_passes = 0);
   void set_default_action(stack_action_e default_action) { this->default_action = default_action; }
   void add_action(bool regex, const char* key, stack_action_e action);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -726,7 +743,6 @@ protected:
   map<string, split_action_e> keyword_actions;
   vector<regex_action_t> regex_actions;
 
-  bool first_line;
   vector<split_action_e> actions;
   vector<string> group_keys;
   vector<string> split_keys;
@@ -750,7 +766,7 @@ protected:
   typedef map<char*, vector<string>, multi_cstr_less> data_t;
   data_t data;
 
-  basic_splitter_t() : default_action(SP_REMOVE), first_line(1), column(0),
+  basic_splitter_t() : default_action(SP_REMOVE),
                        group_tokens(new char[2048]), group_tokens_next(group_tokens), group_tokens_end(group_tokens + 2048),
                        split_by_tokens(new char[2048]), split_by_tokens_next(split_by_tokens), split_by_tokens_end(split_by_tokens + 2048),
                        split_tokens(new char[2048]), split_tokens_next(split_tokens), split_tokens_end(split_tokens + 2048),
@@ -762,6 +778,8 @@ public:
   void reinit_state(int more_passes = 0);
   void set_default_action(split_action_e default_action) { this->default_action = default_action; }
   void add_action(bool regex, const char* key, split_action_e action);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
@@ -803,7 +821,6 @@ protected:
   vector<size_t> columns; //index into sorts or max for other
   vector<size_t>::const_iterator ci;
   size_t sorts_found;
-  bool first_line;
 
   char** sort_buf;
   char** sort_buf_end;
@@ -816,13 +833,15 @@ protected:
   char* other_end;
   vector<row_t> rows;
 
-  basic_sorter_t() : sorts_found(0), first_line(1), sort_buf(0), sort_buf_end(0), sort_next(0), sort_end(0), other_next(0), other_end(0) {}
+  basic_sorter_t() : sorts_found(0), sort_buf(0), sort_buf_end(0), sort_next(0), sort_end(0), other_next(0), other_end(0) {}
   ~basic_sorter_t();
 
 public:
   void reinit(int more_passes = 0) { reinit_state(); sorts.clear(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0);
   void add_sort(const char* key, bool ascending);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_line();
   void process_stream();
@@ -854,7 +873,6 @@ protected:
   vector<string> table_name;
   size_t table;
 
-  bool first_line;
   bool more_lines;
   size_t column;
   vector<size_t> num_columns;
@@ -869,9 +887,11 @@ public:
   void reinit(int more_passes = 0) { table_name.clear(); num_columns.clear(); reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0);
   void add_table_name(const char* name = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
-  void process_line();
+  void process_line() {}
   void process_stream();
   void process_lines();
   void process();
@@ -951,7 +971,6 @@ template<typename input_base_t, typename output_base_t> class basic_col_pruner_t
   basic_col_pruner_t& operator=(const basic_col_pruner_t<input_base_t, output_base_t>& other);
 
 protected:
-  bool first_row;
   bool passthrough;
   size_t column;
   size_t num_columns;
@@ -961,12 +980,14 @@ protected:
   char* next;
   char* end;
 
-  basic_col_pruner_t() : has_data(0) {}
+  basic_col_pruner_t() : passthrough(0), column(0), has_data(0), next(0) {}
   ~basic_col_pruner_t();
 
 public:
   void reinit(int more_passes = 0) { reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -990,18 +1011,19 @@ template<typename input_base_t, typename output_base_t> class basic_combiner_t :
 
 protected:
   vector<pair<pcre*, string> > pairs;
-  bool first_row;
   int column;
   vector<int> remap_indexes;
   vector<string> tokens;
 
-  basic_combiner_t() : first_row(1), column(0) {}
+  basic_combiner_t() : column(0) {}
   ~basic_combiner_t() { for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) pcre_free((*i).first); }
 
 public:
   void reinit(int more_passes = 0) { for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) { pcre_free((*i).first); } pairs.clear(); reinit_state(); this->reinit_output_if(more_passes); }
-  void reinit_state(int more_passes = 0) { first_row = 1; column = 0; remap_indexes.clear(); tokens.clear(); this->reinit_output_state_if(more_passes); }
+  void reinit_state(int more_passes = 0) { column = 0; remap_indexes.clear(); tokens.clear(); this->reinit_output_state_if(more_passes); }
   void add_pair(const char* from, const char* to);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_line();
   void process_stream() { this->output_stream(); }
@@ -1049,7 +1071,6 @@ protected:
   vector<pair<pcre*, uint32_t> > data_regexes;
   vector<pcre*> exception_regexes;
 
-  bool first_line;
   vector<uint32_t> column_flags;
   size_t num_data_columns;
 
@@ -1086,6 +1107,8 @@ public:
   void add_group(const char* regex, bool pre_sorted = 0);
   void add_data(const char* regex, uint32_t flags);
   void add_exception(const char* regex);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -1120,7 +1143,6 @@ protected:
   struct col_t { size_t col; double val; };
 
   vector<range_t> ranges;
-  bool first_row;
   size_t column;
   vector<col_t> columns;
   typename vector<col_t>::iterator ci;
@@ -1128,13 +1150,15 @@ protected:
   size_t leave_tokens_index;
   char* leave_tokens_next;
 
-  basic_range_stacker_t() : first_row(1), column(0), leave_tokens_index(0), leave_tokens_next(0) {}
+  basic_range_stacker_t() : column(0), leave_tokens_index(0), leave_tokens_next(0) {}
   ~basic_range_stacker_t() { for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first; }
 
 public:
   void reinit(int more_passes = 0) { ranges.clear(); reinit_state(); this->reinit_output_if(more_passes); }
   void reinit_state(int more_passes = 0);
   void add(const char* start, const char* stop, const char* new_name);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -1169,20 +1193,21 @@ protected:
   struct conv_t { int from; int to; };
 
   vector<regex_base_conv_t> regex_base_conv;
-  bool first_row;
   int column;
   vector<conv_t> conv;
 
-  basic_base_converter_t() : first_row(1), column(0) {}
+  basic_base_converter_t() : column(0) {}
   ~basic_base_converter_t() {}
 
 public:
   void reinit(int more_passes = 0) { reinit_state(); this->reinit_output_if(more_passes); }
-  void reinit_state(int more_passes = 0) { regex_base_conv.clear(); first_row = 1; column = 0; conv.clear(); this->reinit_output_state_if(more_passes); }
+  void reinit_state(int more_passes = 0) { regex_base_conv.clear(); column = 0; conv.clear(); this->reinit_output_state_if(more_passes); }
   void add_conv(const char* regex, int from, int to);
+  void process_key(const char* token, size_t len);
+  void process_keys() { column = 0; this->output_keys(); }
   void process_token(const char* token, size_t len);
   void process_token(double token);
-  void process_line() { if(first_row) { first_row = 0; } column = 0; this->output_line(); }
+  void process_line() { column = 0; this->output_line(); }
   void process_stream() { this->output_stream(); }
 };
 
@@ -1214,7 +1239,6 @@ protected:
   vector<pcre*> data_regexes;
   vector<pcre*> exception_regexes;
 
-  bool first_line;
   vector<char> column_type; // 0 = ignore, 1 = group, 2 = data
   vector<string> data_keywords;
 
@@ -1241,6 +1265,8 @@ public:
   void add_group(const char* regex);
   void add_data(const char* regex);
   void add_exception(const char* regex);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -1331,14 +1357,13 @@ protected:
   struct col_t { size_t col; bool passthrough; vector<op_t> ops; };
 
   vector<inst_t> insts;
-  bool first_row;
   size_t column;
   char* buf;
   char* end;
   vector<col_t> columns;
   typename vector<col_t>::iterator ci;
 
-  basic_unary_col_adder_t() : first_row(1), column(0), buf(new char[2048]), end(buf + 2048) {}
+  basic_unary_col_adder_t() : column(0), buf(new char[2048]), end(buf + 2048) {}
   ~basic_unary_col_adder_t() { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); delete[] buf; }
   c_str_and_len_t get_in_value(const char* token, size_t len, c_str_and_len_t* dummy) { return c_str_and_len_t(token, len); }
   c_str_and_len_t get_in_value(double token, char* buf, c_str_and_len_t* dummy) { c_str_and_len_t ret; ret.c_str = buf; ret.len = dtostr(token, buf); return ret; }
@@ -1349,11 +1374,13 @@ protected:
 
 public:
   void reinit(int more_passes = 0) { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); reinit_state(); this->reinit_output_if(more_passes); }
-  void reinit_state(int more_passes = 0) { first_row = 1; column = 0; delete[] buf; buf = new char[2048]; end = buf + 2048; columns.clear(); this->reinit_output_state_if(more_passes); }
+  void reinit_state(int more_passes = 0) { column = 0; delete[] buf; buf = new char[2048]; end = buf + 2048; columns.clear(); this->reinit_output_state_if(more_passes); }
   void add(const char* regex, const char* new_key, const op_t& op, bool remove_source = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys() { this->output_keys(); column = 0; ci = columns.begin(); }
   void process_token(const char* token, size_t len);
   void process_token(double token);
-  void process_line() { if(first_row) { first_row = 0; } this->output_line(); column = 0; ci = columns.begin(); }
+  void process_line() { this->output_line(); column = 0; ci = columns.begin(); }
   void process_stream() { this->output_stream(); }
 };
 
@@ -1390,7 +1417,6 @@ protected:
   struct new_col_t { size_t col_index; size_t other_col_index; op_t op; };
 
   vector<inst_t> insts;
-  bool first_row;
   size_t column;
   vector<char*> key_storage;
   char* key_storage_next;
@@ -1411,6 +1437,8 @@ public:
   void reinit(int more_passes = 0) { for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) pcre_free((*i).regex); insts.clear(); this->reinit_state(); }
   void reinit_state(int more_passes = 0);
   void add(const char* regex, const char* other_key, const char* new_key, const op_t& op, bool remove_source = 0, bool remove_other = 0);
+  void process_key(const char* token, size_t len);
+  void process_keys();
   void process_token(const char* token, size_t len);
   void process_token(double token);
   void process_line();
@@ -1487,18 +1515,21 @@ template<typename input_base_t, typename output_base_t> void basic_tabular_write
   end = 0;
 }
 
+template<typename input_base_t, typename output_base_t> void basic_tabular_writer_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  char lbuf[32]; int clen = sprintf(lbuf, "%zu", column);
+  max_width.push_back(clen + 1);
+  this->output('c');
+  this->output(lbuf, clen);
+  this->output('=');
+  this->output(token, len);
+  this->output('\n');
+  ++column;
+}
+
 template<typename input_base_t, typename output_base_t> void basic_tabular_writer_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(!line) {
-    char lbuf[32]; int clen = sprintf(lbuf, "%zu", column);
-    max_width.push_back(clen + 1);
-    this->output('c');
-    this->output(lbuf, clen);
-    this->output('=');
-    this->output(token, len);
-    this->output('\n');
-  }
-  else if(line < 20) {
+  if(line < 20) {
     if(max_width[column] < len) max_width[column] = len;
     if(!next || next + len + 2 > end) {
       if(next) *next++ = '\03';
@@ -1526,33 +1557,63 @@ template<typename input_base_t, typename output_base_t> void basic_tabular_write
 // driver
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename reader_t, typename output_base_t> void csv_reader_base_t<reader_t, output_base_t>::process(bool eof)
+template<typename reader_t, typename output_base_t> void csv_reader_base_t<reader_t, output_base_t>::process_keys(bool eof)
 {
-  for(const char* start = buf; 1;) { // tokens
+  while(1) { // tokens
     const char* end = start;
     while(end < data_end && *end != '\n' && *end != ',') ++end;
 
-    if(!eof && end == data_end) {
-      if(start != buf) { const size_t len = end - start; memcpy(buf, start, len); data_end = buf + len; }
+    if(end == data_end) {
+      if(eof) {
+        if(column || start != end) { this->output_key(start, end - start); column++; }
+        if(column) { this->output_keys(); num_keys = column; }
+      }
+      else if(start != buf) { const size_t len = end - start; memcpy(buf, start, len); start = buf; data_end = buf + len; }
       break;
     }
-
-    if(end == data_end) { if(column || start != end) this->output_token(start, end - start); }
-    else if(*end == ',') { this->output_token(start, end - start); ++column; }
+    else if(*end == ',') { this->output_key(start, end - start); ++column; start = end + 1; }
     else {
-      this->output_token(start, end - start);
-      if(!line) { num_keys = column; }
-      else if(column != num_keys && (column || start != end)) {
-        stringstream msg; msg << "Line " << line << " had " << column << " columns when the first line had " << num_keys;
-        throw runtime_error(msg.str());
-      }
-      this->output_line();
-      ++line;
-      column = 0;
+      if(column || start != end) { this->output_key(start, end - start); ++column; }
+      if(column) { this->output_keys(); num_keys = column; in_keys = 0; }
+      column = 0; ++line; start = end + 1;
+      break;
     }
+  }
+}
 
-    if(end == data_end) { data_end = buf; break; }
-    else start = end + 1;
+template<typename reader_t, typename output_base_t> void csv_reader_base_t<reader_t, output_base_t>::process(bool eof)
+{
+  while(1) { // tokens
+    const char* end = start;
+    while(end < data_end && *end != '\n' && *end != ',') ++end;
+
+    if(end == data_end) {
+      if(eof) {
+        if(column || start != end) { this->output_token(start, end - start); column++; }
+        if(column) {
+          if(column != num_keys) {
+            stringstream msg; msg << "Line " << line << " had " << column << " tokens when num_keys is " << num_keys;
+            throw runtime_error(msg.str());
+          }
+          this->output_line();
+        }
+      }
+      else if(start != buf) { const size_t len = end - start; memcpy(buf, start, len); start = buf; data_end = buf + len; }
+      break;
+    }
+    else if(*end == ',') { this->output_token(start, end - start); ++column; start = end + 1; }
+    else {
+      if(column || start != end) { this->output_token(start, end - start); column++; }
+      if(column) {
+        if(column != num_keys) {
+          stringstream msg; msg << "Line " << line << " had " << column << " tokens when num_keys is " << num_keys;
+          throw runtime_error(msg.str());
+        }
+        this->output_line();
+        column = 0;
+      }
+      ++line; start = end + 1;
+    }
   }
 }
 
@@ -1560,17 +1621,18 @@ template<typename reader_t, typename output_base_t> int csv_reader_base_t<reader
 {
   const size_t read_size = 32 * 1024;
 
-  if(!buf) {
-    buf = new char[read_size + 128];
-    data_end = buf;
-    buf_end = buf + read_size + 128;
-  }
-
-  ssize_t num_read; do {
+  line = 0;
+  column = 0;
+  if(!buf) { buf = new char[read_size + 128]; buf_end = buf + read_size + 128; }
+  start = buf;
+  data_end = buf;
+  in_keys = 1;
+  size_t num_read; do {
     if(data_end + read_size + 1 > buf_end) resize_buffer(buf, data_end, buf_end, read_size);
     num_read = r.read(data_end, read_size);
     data_end += num_read;
-    process(num_read == 0);
+    if(in_keys) process_keys(num_read == 0);
+    if(!in_keys) process(num_read == 0);
   } while(num_read > 0);
 
 #ifdef TABLE_DIMENSIONS_DEBUG_PRINTS
@@ -1603,10 +1665,12 @@ template<typename input_base_t, typename output_base_t> void* basic_threader_t<i
     pthread_mutex_unlock(&t.mutex);
 
     for(char* cur = t.chunks[t.read_chunk].start; 1; ++cur) {
-      if(*cur == '\x01') { t.output_token(*reinterpret_cast<double*>(++cur)); cur += sizeof(double) - 1; }
-      else if(*cur == '\x02') { t.output_line(); }
-      else if(*cur == '\x03') { break; }
-      else if(*cur == '\x04') { done = 1; break; }
+      if(*cur == '\x01') { size_t len = strlen(++cur); t.output_key(cur, len); cur += len; }
+      else if(*cur == '\x02') { t.output_keys(); }
+      else if(*cur == '\x03') { t.output_token(*reinterpret_cast<double*>(++cur)); cur += sizeof(double) - 1; }
+      else if(*cur == '\x04') { t.output_line(); }
+      else if(*cur == '\x05') { break; }
+      else if(*cur == '\x06') { done = 1; break; }
       else { size_t len = strlen(cur); t.output_token(cur, len); cur += len; }
     }
   }
@@ -1638,7 +1702,7 @@ template<typename input_base_t, typename output_base_t> void basic_threader_t<in
 
 template<typename input_base_t, typename output_base_t> void basic_threader_t<input_base_t, output_base_t>::inc_write_chunk(bool term)
 {
-    if(term) *write_chunk_next++ = '\x03';
+    if(term) *write_chunk_next++ = '\x05';
 
     pthread_mutex_lock(&mutex);
     while((write_chunk + 1) % 8 == read_chunk)
@@ -1660,6 +1724,33 @@ template<typename input_base_t, typename output_base_t> void basic_threader_t<in
   write_chunk_next = chunks[0].start;
   read_chunk = 0;
   this->reinit_output_state_if(more_passes);
+}
+
+template<typename input_base_t, typename output_base_t> void basic_threader_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  if(!thread_created) {
+    pthread_mutex_init(&mutex, 0);
+    pthread_cond_init(&prod_cond, 0);
+    pthread_cond_init(&cons_cond, 0);
+    pthread_create(&thread, 0, basic_threader_t<input_base_t, output_base_t>::threader_main, this);
+    thread_created = 1;
+  }
+
+  if(size_t(chunks[write_chunk].end - write_chunk_next) < len + 3) {
+    if(write_chunk_next == chunks[write_chunk].start) resize_write_chunk(len + 3);
+    else inc_write_chunk();
+  }
+  *write_chunk_next++ = '\x01';
+  memcpy(write_chunk_next, token, len); write_chunk_next += len;
+  *write_chunk_next++ = '\0';
+}
+
+template<typename input_base_t, typename output_base_t> void basic_threader_t<input_base_t, output_base_t>::process_keys()
+{
+  if(!thread_created) { this->output_line(); return; }
+
+  if(chunks[write_chunk].end - write_chunk_next < 2) inc_write_chunk();
+  *write_chunk_next++ = '\x02';
 }
 
 template<typename input_base_t, typename output_base_t> void basic_threader_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
@@ -1691,7 +1782,7 @@ template<typename input_base_t, typename output_base_t> void basic_threader_t<in
   }
 
   if(size_t(chunks[write_chunk].end - write_chunk_next) < size_t(sizeof(double) + 2)) inc_write_chunk();
-  *write_chunk_next++ = '\x01';
+  *write_chunk_next++ = '\x03';
   memcpy(write_chunk_next, &token, sizeof(double));
   write_chunk_next += sizeof(double);
 }
@@ -1701,14 +1792,14 @@ template<typename input_base_t, typename output_base_t> void basic_threader_t<in
   if(!thread_created) { this->output_line(); return; }
 
   if(chunks[write_chunk].end - write_chunk_next < 2) inc_write_chunk();
-  *write_chunk_next++ = '\x02';
+  *write_chunk_next++ = '\x04';
 }
 
 template<typename input_base_t, typename output_base_t> void basic_threader_t<input_base_t, output_base_t>::process_stream()
 {
   if(!thread_created) { this->output_stream(); return; }
 
-  *write_chunk_next++ = '\x04';
+  *write_chunk_next++ = '\x06';
   inc_write_chunk(0);
 
   pthread_join(thread, 0);
@@ -1747,64 +1838,70 @@ template<typename input_base_t> void basic_subset_tee_t<input_base_t>::add_excep
   else (*ddi).second.key_except.insert(key);
 }
 
-template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_key(const char* token, size_t len)
 {
-  if(first_row) {
-    for(typename map<dynamic_pass_t*, dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
-      dest_data_t& d = (*di).second;
+  for(typename map<dynamic_pass_t*, dest_data_t>::iterator di = dest_data.begin(); di != dest_data.end(); ++di) {
+    dest_data_t& d = (*di).second;
 
-      bool add = 0;
-      string stoken(token, len);
-      set<string>::const_iterator ki = d.key.find(stoken);
-      if(ki != d.key.end()) add = 1;
-      else {
-        for(vector<pcre*>::const_iterator ri = d.regex.begin(); ri != d.regex.end(); ++ri) {
-          int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
-          if(rc >= 0) { add = 1; break; }
-          else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
-        }
-      }
-
-      set<string>::const_iterator kei = d.key_except.find(stoken);
-      if(kei != d.key_except.end()) add = 0;
-      else {
-        for(vector<pcre*>::const_iterator ri = d.regex_except.begin(); ri != d.regex_except.end(); ++ri) {
-          int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
-          if(rc >= 0) { add = 0; break; }
-          else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
-        }
-      }
-
-      if(add) {
-        dest.resize(dest.size() + 1);
-        dest.back().first = column;
-        dest.back().second = (*di).first;
-        d.has_data = 1;
-        (*di).first->process_token(token, len);
+    bool add = 0;
+    string stoken(token, len);
+    set<string>::const_iterator ki = d.key.find(stoken);
+    if(ki != d.key.end()) add = 1;
+    else {
+      for(vector<pcre*>::const_iterator ri = d.regex.begin(); ri != d.regex.end(); ++ri) {
+        int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { add = 1; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
       }
     }
-  }
-  else {
-    for(; di != dest.end() && (*di).first == column; ++di)
-      (*di).second->process_token(token, len);
+
+    set<string>::const_iterator kei = d.key_except.find(stoken);
+    if(kei != d.key_except.end()) add = 0;
+    else {
+      for(vector<pcre*>::const_iterator ri = d.regex_except.begin(); ri != d.regex_except.end(); ++ri) {
+        int ovector[30]; int rc = pcre_exec(*ri, 0, token, len, 0, 0, ovector, 30);
+        if(rc >= 0) { add = 0; break; }
+        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("subset_tee match error");
+      }
+    }
+
+    if(add) {
+      dest.resize(dest.size() + 1);
+      dest.back().first = column;
+      dest.back().second = (*di).first;
+      d.has_data = 1;
+      (*di).first->process_token(token, len);
+    }
   }
 
+  ++column;
+}
+
+template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_keys()
+{
+  for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi)
+    if((*ddi).second.has_data)
+      (*ddi).first->process_keys();
+  column = 0;
+  di = dest.begin();
+}
+
+template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_token(const char* token, size_t len)
+{
+  for(; di != dest.end() && (*di).first == column; ++di)
+    (*di).second->process_token(token, len);
   ++column;
 }
 
 template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_token(double token)
 {
-  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   for(; di != dest.end() && (*di).first == column; ++di)
     (*di).second->process_token(token);
-
   ++column;
 }
 
 template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_line()
 {
-  first_row = 0;
   for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi)
     if((*ddi).second.has_data)
       (*ddi).first->process_line();
@@ -1819,7 +1916,6 @@ template<typename input_base_t> void basic_subset_tee_t<input_base_t>::process_l
 
 template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::reinit_state(int more_passes)
 {
-  first_row = 1;
   num_columns = 0;
   for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) delete[] *i;
   data.clear();
@@ -1831,21 +1927,43 @@ template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::reinit_s
     (*i)->reinit_state(more_passes);
 }
 
+template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_key(const char* token, size_t len)
+{
+  if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
+  out[0]->process_key(token, len);
+  ++num_columns;
+  if(!next || next + len + 3 > end) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    if(cap < len + 2) cap = len + 3;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  }
+  *next++ = '\x01';
+  memcpy(next, token, len); next += len;
+  *next++ = '\0';
+}
+
+template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_keys()
+{
+  if(!out.size()) throw runtime_error("ordered_tee::process_line no outs");
+  out[0]->process_keys();
+  *next++ = '\x02';
+}
+
 template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_token(const char* token, size_t len)
 {
   if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
   out[0]->process_token(token, len);
-
-  if(first_row) ++num_columns;
-
-  if(!next || (len + 2) > size_t(end - next)) {
-    if(next) *next++ = '\x03';
+  if(!next || next + len + 2 > end) {
+    if(next) *next++ = '\x05';
     size_t cap = 256 * 1024;
     if(cap < len + 2) cap = len + 2;
     data.push_back(new char[cap]);
     next = data.back();
     end = data.back() + cap;
-  } 
+  }
   memcpy(next, token, len); next += len;
   *next++ = '\0';
 }
@@ -1854,17 +1972,14 @@ template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_
 {
   if(!out.size()) throw runtime_error("ordered_tee::process_token no outs");
   out[0]->process_token(token);
-
-  if(first_row) ++num_columns;
-
-  if(!next || 2 + sizeof(double) > size_t(end - next)) {
-    if(next) *next++ = '\x03';
+  if(!next || next + 2 + sizeof(double) > end) {
+    if(next) *next++ = '\x05';
     size_t cap = 256 * 1024;
     data.push_back(new char[cap]);
     next = data.back();
     end = data.back() + cap;
-  } 
-  *next++ = '\x01';
+  }
+  *next++ = '\x03';
   memcpy(next, &token, sizeof(double));
   next += sizeof(double);
 }
@@ -1872,14 +1987,13 @@ template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_
 template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_line()
 {
   if(!out.size()) throw runtime_error("ordered_tee::process_line no outs");
-
   out[0]->process_line();
-  first_row = 0;
+  *next++ = '\x04';
 }
 
 template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_stream()
 {
-  if(next) *next++ = '\x03';
+  if(next) *next++ = '\x05';
 
   vector<dynamic_pass_t*>::iterator oi = out.begin();
   (*oi)->process_stream();
@@ -1887,23 +2001,14 @@ template<typename input_base_t> void basic_ordered_tee_t<input_base_t>::process_
     vector<dynamic_pass_t*>::iterator noi = oi; ++noi;
     const bool last_out = noi == out.end();
 
-    int column = 0;
     for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
       const char* p = *i;
-      while(*p != '\03') {
-        if(*p == '\x01') {
-          (*oi)->process_token(*reinterpret_cast<const double*>(++p));
-          p += sizeof(double);
-        }
-        else {
-          size_t len = strlen(p);
-          (*oi)->process_token(p, len);
-          p += len + 1;
-        }
-        if(++column >= num_columns) {
-          (*oi)->process_line();
-          column = 0;
-        }
+      while(*p != '\05') {
+        if(*p == '\x01') { size_t len = strlen(++p); (*oi)->process_key(p, len); p += len + 1; }
+        else if(*p == '\x02') { (*oi)->process_keys(); ++p; }
+        else if(*p == '\x03') { (*oi)->process_token(*reinterpret_cast<const double*>(++p)); p += sizeof(double); }
+        else if(*p == '\x04') { (*oi)->process_line(); ++p; }
+        else { size_t len = strlen(p); (*oi)->process_token(p, len); p += len + 1; }
       }
       if(last_out) delete[] *i;
     }
@@ -1986,7 +2091,6 @@ template<typename input_base_t, typename output_base_t> void basic_stacker_t<inp
 
 template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_line = 1;
   stack_keys.clear();
   actions.clear();
   last_leave = 0;
@@ -2016,53 +2120,63 @@ template<typename input_base_t, typename output_base_t> void basic_stacker_t<inp
   else keyword_actions[key] = action;
 }
 
+template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  stack_action_e action = default_action;
+  string stoken(token, len);
+  map<string, stack_action_e>::iterator i = keyword_actions.find(stoken);
+  if(i != keyword_actions.end()) action = (*i).second;
+  else {
+    for(typename vector<regex_stack_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
+      int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { action = (*j).action; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("stacker match error");
+    }
+  }
+  actions.push_back(action);
+  if(action == ST_LEAVE) { last_leave = column; this->output_key(token, len); }
+  else if(action == ST_STACK) stack_keys.push_back(stoken);
+
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::process_keys()
+{
+  this->output_key("keyword", 7);
+  this->output_key("data", 4);
+  this->output_keys();
+  this->process_line();
+}
+
 template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(first_line) {
-    stack_action_e action = default_action;
-    string stoken(token, len);
-    map<string, stack_action_e>::iterator i = keyword_actions.find(stoken);
-    if(i != keyword_actions.end()) action = (*i).second;
-    else {
-      for(typename vector<regex_stack_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
-        int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { action = (*j).action; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("stacker match error");
+  if(column >= actions.size()) throw runtime_error("too many columns");
+  else if(actions[column] == ST_LEAVE) {
+    if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second)
+      resize(len + 2, leave_tokens, leave_tokens_index, leave_tokens_next);
+    memcpy(leave_tokens_next, token, len); leave_tokens_next += len;
+    *leave_tokens_next++ = '\0';
+    if(column == last_leave) {
+      *leave_tokens_next++ = '\x04';
+      if(stack_tokens_next) {
+        *stack_tokens_next++ = '\x04';
+        process_stack_tokens();
       }
     }
-    actions.push_back(action);
-    if(action == ST_LEAVE) { last_leave = column; this->output_token(token, len); }
-    else if(action == ST_STACK) stack_keys.push_back(stoken);
   }
-  else {
-    if(column >= actions.size()) throw runtime_error("too many columns");
-    else if(actions[column] == ST_LEAVE) {
-      if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second)
-        resize(len + 2, leave_tokens, leave_tokens_index, leave_tokens_next);
-      memcpy(leave_tokens_next, token, len); leave_tokens_next += len;
-      *leave_tokens_next++ = '\0';
-      if(column == last_leave) {
-        *leave_tokens_next++ = '\x04';
-        if(stack_tokens_next) {
-          *stack_tokens_next++ = '\x04';
-          process_stack_tokens();
-        }
-      }
+  else if(actions[column] == ST_STACK) {
+    if(column < last_leave) {
+      if(!stack_tokens_next || stack_tokens_next + len + 2 > stack_tokens[stack_tokens_index].second)
+        resize(len + 2, stack_tokens, stack_tokens_index, stack_tokens_next);
+      memcpy(stack_tokens_next, token, len); stack_tokens_next += len;
+      *stack_tokens_next++ = '\0';
     }
-    else if(actions[column] == ST_STACK) {
-      if(column < last_leave) {
-        if(!stack_tokens_next || stack_tokens_next + len + 2 > stack_tokens[stack_tokens_index].second)
-          resize(len + 2, stack_tokens, stack_tokens_index, stack_tokens_next);
-        memcpy(stack_tokens_next, token, len); stack_tokens_next += len;
-        *stack_tokens_next++ = '\0';
-      }
-      else {
-        process_leave_tokens();
-        this->output_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
-        this->output_token(token, len);
-        this->output_line();
-        ++stack_column;
-      }
+    else {
+      process_leave_tokens();
+      this->output_token(stack_keys[stack_column].c_str(), stack_keys[stack_column].size());
+      this->output_token(token, len);
+      this->output_line();
+      ++stack_column;
     }
   }
 
@@ -2071,8 +2185,6 @@ template<typename input_base_t, typename output_base_t> void basic_stacker_t<inp
 
 template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(column >= actions.size()) throw runtime_error("too many columns");
   else if(actions[column] == ST_LEAVE) {
     if(!leave_tokens_next || leave_tokens_next + sizeof(token) + 2 > leave_tokens[leave_tokens_index].second)
@@ -2108,12 +2220,6 @@ template<typename input_base_t, typename output_base_t> void basic_stacker_t<inp
 
 template<typename input_base_t, typename output_base_t> void basic_stacker_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_line) {
-    this->output_token("keyword", 7);
-    this->output_token("data", 4);
-    this->output_line();
-    first_line = 0;
-  }
   column = 0;
   stack_column = 0;
   leave_tokens_index = 0;
@@ -2160,7 +2266,6 @@ template<typename input_base_t, typename output_base_t> void basic_splitter_t<in
 
 template<typename input_base_t, typename output_base_t> void basic_splitter_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_line = 1;
   actions.clear();
   group_keys.clear();
   split_keys.clear();
@@ -2199,104 +2304,105 @@ template<typename input_base_t, typename output_base_t> void basic_splitter_t<in
   else keyword_actions[key] = action;
 }
 
+template<typename input_base_t, typename output_base_t> void basic_splitter_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  split_action_e action = default_action;
+  string stoken(token, len);
+  map<string, split_action_e>::iterator i = keyword_actions.find(stoken);
+  if(i != keyword_actions.end()) action = (*i).second;
+  else {
+    for(typename vector<regex_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
+      int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { action = (*j).action; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("splitter match error");
+    }
+  }
+  actions.push_back(action);
+  if(action == SP_GROUP) group_keys.push_back(stoken);
+  else if(action == SP_SPLIT) split_keys.push_back(stoken);
+}
+
+template<typename input_base_t, typename output_base_t> void basic_splitter_t<input_base_t, output_base_t>::process_keys()
+{
+  column = 0;
+  group_tokens_next = group_tokens;
+  split_by_tokens_next = split_by_tokens;
+  split_tokens_next = split_tokens;
+}
+
 template<typename input_base_t, typename output_base_t> void basic_splitter_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(first_line) {
-    split_action_e action = default_action;
-    string stoken(token, len);
-    map<string, split_action_e>::iterator i = keyword_actions.find(stoken);
-    if(i != keyword_actions.end()) action = (*i).second;
-    else {
-      for(typename vector<regex_action_t>::iterator j = regex_actions.begin(); j != regex_actions.end(); ++j) {
-        int ovector[30]; int rc = pcre_exec((*j).regex, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { action = (*j).action; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("splitter match error");
-      }
-    }
-    actions.push_back(action);
-    if(action == SP_GROUP) group_keys.push_back(stoken);
-    else if(action == SP_SPLIT) split_keys.push_back(stoken);
+  if(actions[column] == SP_GROUP) {
+    if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+    memcpy(group_tokens_next, token, len); group_tokens_next += len;
+    *group_tokens_next++ = '\0';
   }
-  else {
-    if(actions[column] == SP_GROUP) {
-      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = '\0';
-    }
-    else if(actions[column] == SP_SPLIT_BY) {
-      if(split_by_tokens_next + len >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end, len + 1);
-      memcpy(split_by_tokens_next, token, len); split_by_tokens_next += len;
-      *split_by_tokens_next++ = '\0';
-    }
-    else if(actions[column] == SP_SPLIT) {
-      if(split_tokens_next + len >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end, len + 1);
-      memcpy(split_tokens_next, token, len); split_tokens_next += len;
-      *split_tokens_next++ = '\0';
-    }
+  else if(actions[column] == SP_SPLIT_BY) {
+    if(split_by_tokens_next + len >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end, len + 1);
+    memcpy(split_by_tokens_next, token, len); split_by_tokens_next += len;
+    *split_by_tokens_next++ = '\0';
   }
-
+  else if(actions[column] == SP_SPLIT) {
+    if(split_tokens_next + len >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end, len + 1);
+    memcpy(split_tokens_next, token, len); split_tokens_next += len;
+    *split_tokens_next++ = '\0';
+  }
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_splitter_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_line) {
-    first_line = 0;
-  }
-  else {
-    if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-    *group_tokens_next++ = '\x03';
-    if(split_by_tokens_next >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end);
-    *split_by_tokens_next++ = '\x03';
-    if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
-    *split_tokens_next++ = '\x03';
+  if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+  *group_tokens_next++ = '\x03';
+  if(split_by_tokens_next >= split_by_tokens_end) resize_buffer(split_by_tokens, split_by_tokens_next, split_by_tokens_end);
+  *split_by_tokens_next++ = '\x03';
+  if(split_tokens_next >= split_tokens_end) resize_buffer(split_tokens, split_tokens_next, split_tokens_end);
+  *split_tokens_next++ = '\x03';
 
-    data_t::iterator di = data.find(group_tokens);
-    if(di == data.end()) {
-      size_t len = group_tokens_next - group_tokens;
-      if(len + 1 > size_t(group_storage_end - group_storage_next)) {
-        if(group_storage_next) *group_storage_next++ = '\x04';
-        size_t cap = 256 * 1024;
-        if(cap < len + 1) cap = len + 1;
-        group_storage.push_back(new char[cap]);
-        group_storage_next = group_storage.back();
-        group_storage_end = group_storage.back() + cap;
-      }
-      memcpy(group_storage_next, group_tokens, len);
-      di = data.insert(data_t::value_type(group_storage_next, vector<string>())).first;
-      group_storage_next += len;
+  data_t::iterator di = data.find(group_tokens);
+  if(di == data.end()) {
+    size_t len = group_tokens_next - group_tokens;
+    if(len + 1 > size_t(group_storage_end - group_storage_next)) {
+      if(group_storage_next) *group_storage_next++ = '\x04';
+      size_t cap = 256 * 1024;
+      if(cap < len + 1) cap = len + 1;
+      group_storage.push_back(new char[cap]);
+      group_storage_next = group_storage.back();
+      group_storage_end = group_storage.back() + cap;
     }
-    vector<string>& values = (*di).second;
-    vector<string>::const_iterator ski = split_keys.begin();
-    for(char* stp = split_tokens; *stp != '\x03'; ++ski, ++stp) {
-      group_tokens_next = group_tokens;
-      for(const char* p = (*ski).c_str(); *p; ++p) {
+    memcpy(group_storage_next, group_tokens, len);
+    di = data.insert(data_t::value_type(group_storage_next, vector<string>())).first;
+    group_storage_next += len;
+  }
+  vector<string>& values = (*di).second;
+  vector<string>::const_iterator ski = split_keys.begin();
+  for(char* stp = split_tokens; *stp != '\x03'; ++ski, ++stp) {
+    group_tokens_next = group_tokens;
+    for(const char* p = (*ski).c_str(); *p; ++p) {
+      if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+      *group_tokens_next++ = *p;
+    }
+    for(char* sbtp = split_by_tokens; *sbtp != '\x03'; ++sbtp) {
+      *group_tokens_next++ = ' ';
+      while(*sbtp) {
         if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-        *group_tokens_next++ = *p;
+        *group_tokens_next++ = *sbtp++;
       }
-      for(char* sbtp = split_by_tokens; *sbtp != '\x03'; ++sbtp) {
-        *group_tokens_next++ = ' ';
-        while(*sbtp) {
-          if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-          *group_tokens_next++ = *sbtp++;
-        }
-      }
-      *group_tokens_next++ = '\0';
-
-      map<char*, size_t, cstr_less>::iterator i = out_split_keys.find(group_tokens);
-      if(i == out_split_keys.end()) {
-        char* cpy = new char[group_tokens_next - group_tokens];
-        memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
-        i = out_split_keys.insert(map<char*, size_t, cstr_less>::value_type(cpy, out_split_keys.size())).first;
-      }
-      const size_t& index = (*i).second;
-      if(index >= values.size()) values.resize(index + 1);
-      values[index] = stp;
-
-      while(*stp) ++stp;
     }
-  }
+    *group_tokens_next++ = '\0';
 
+    map<char*, size_t, cstr_less>::iterator i = out_split_keys.find(group_tokens);
+    if(i == out_split_keys.end()) {
+      char* cpy = new char[group_tokens_next - group_tokens];
+      memcpy(cpy, group_tokens, group_tokens_next - group_tokens);
+      i = out_split_keys.insert(map<char*, size_t, cstr_less>::value_type(cpy, out_split_keys.size())).first;
+    }
+    const size_t& index = (*i).second;
+    if(index >= values.size()) values.resize(index + 1);
+    values[index] = stp;
+
+    while(*stp) ++stp;
+  }
   column = 0;
   group_tokens_next = group_tokens;
   split_by_tokens_next = split_by_tokens;
@@ -2383,7 +2489,6 @@ template<typename input_base_t, typename output_base_t> void basic_sorter_t<inpu
 {
   columns.clear();
   sorts_found = 0;
-  first_line = 1;
   delete[] sort_buf_end; sort_buf_end = 0;
   if(sort_buf) { for(size_t i = 0; i < sorts.size(); ++i) delete[] sort_buf[i]; }
   delete[] sort_buf; sort_buf = 0;
@@ -2409,38 +2514,98 @@ template<typename input_base_t, typename output_base_t> void basic_sorter_t<inpu
   sorts.back().type = ascending ? 1 : 2;
 }
 
-template<typename input_base_t, typename output_base_t> void basic_sorter_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t, typename output_base_t> void basic_sorter_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
 {
-  size_t index;
-
-  if(first_line) {
-    if(!sort_buf) {
-      sort_buf = new char*[sorts.size()];
-      sort_buf_end = new char*[sorts.size()];
-      for(size_t i = 0; i < sorts.size(); ++i) {
-        sort_buf[i] = new char[16];
-        *sort_buf[i] = '\0';
-        sort_buf_end[i] = sort_buf[i] + 16;
-      }
-      sort_buf_len = 0;
-    }
-
-    index = numeric_limits<size_t>::max();
+  if(!sort_buf) {
+    sort_buf = new char*[sorts.size()];
+    sort_buf_end = new char*[sorts.size()];
     for(size_t i = 0; i < sorts.size(); ++i) {
-      if(!sorts[i].key.compare(token)) { index = i; ++sorts_found; break; }
+      sort_buf[i] = new char[16];
+      *sort_buf[i] = '\0';
+      sort_buf_end[i] = sort_buf[i] + 16;
     }
-    columns.push_back(index);
+    sort_buf_len = 0;
+  }
+
+  size_t index = numeric_limits<size_t>::max();
+  for(size_t i = 0; i < sorts.size(); ++i) {
+    if(!sorts[i].key.compare(token)) { index = i; ++sorts_found; break; }
+  }
+  columns.push_back(index);
+
+  if(index == numeric_limits<size_t>::max()) {
+    if(other_next + len + 2 >= other_end) {
+      if(other_storage.size() && other_next == other_storage.back()) {
+        size_t row_off = rows.size() ? rows.back().other - other_storage.back() : 0;
+        resize_buffer(other_storage.back(), other_next, other_end, len + 2);
+        if(rows.size()) rows.back().other = other_next + row_off;
+      }
+      else {
+        if(other_next) *other_next = '\x04';
+        size_t cap = len + 2;
+        if(cap < 256 * 1024) cap = 256 * 1024;
+        other_storage.resize(other_storage.size() + 1);
+        other_storage.back() = new char[cap];
+        other_next = other_storage.back();
+        other_end = other_storage.back() + cap;
+        if(rows.size() && !rows.back().other) rows.back().other = other_next;
+      }
+    }
+    memcpy(other_next, token, len); other_next += len;
+    *other_next++ = '\0';
   }
   else {
-    if(ci == columns.begin()) {
-      rows.resize(rows.size() + 1);
-      rows.back().sort = sort_next;
-      rows.back().other = other_next;
-      rows.back().other_index = other_storage.size() ? other_storage.size() - 1 : 0;
-    }
-    index = *ci++;
+    char* next = sort_buf[index];
+    if(sort_buf[index] + len >= sort_buf_end[index]) resize_buffer(sort_buf[index], next, sort_buf_end[index], len + 1);
+    memcpy(next, token, len); next += len;
+    *next++ = '\0';
+    sort_buf_len += len;
+  }
+}
+
+template<typename input_base_t, typename output_base_t> void basic_sorter_t<input_base_t, output_base_t>::process_keys()
+{
+  if(sorts_found < sorts.size()) throw runtime_error("sorter didn't find enough columns");
+  if(sorts_found > sorts.size()) throw runtime_error("sorter didn't find too many sort columns");
+
+  for(size_t i = 0; i < sorts.size(); ++i) {
+    this->output_key(sort_buf[i], strlen(sort_buf[i]));
+    sort_buf[i][0] = '\0';
   }
 
+  *other_next++ = '\x03';
+  vector<char*>::iterator osi = other_storage.begin();
+  char* p = osi == other_storage.end() ? 0 : *osi;
+  while(1) {
+    const char* s = p;
+    while(*p) ++p;
+    this->output_key(s, p - s);
+    ++p;
+    if(*p == '\x03') { delete[] *osi; break; }
+    else if(*p == '\x04') {
+      delete[] *osi; *osi = 0;
+      ++osi;
+      p = osi == other_storage.end() ? 0 : *osi;
+    }
+  }
+  other_storage.clear();
+  other_next = 0;
+  other_end = 0;
+  this->output_keys();
+
+  ci = columns.begin();
+}
+
+template<typename input_base_t, typename output_base_t> void basic_sorter_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+{
+  if(ci == columns.begin()) {
+    rows.resize(rows.size() + 1);
+    rows.back().sort = sort_next;
+    rows.back().other = other_next;
+    rows.back().other_index = other_storage.size() ? other_storage.size() - 1 : 0;
+  }
+
+  size_t index = *ci++;
   if(index == numeric_limits<size_t>::max()) {
     if(other_next + len + 2 >= other_end) {
       if(other_storage.size() && other_next == other_storage.back()) {
@@ -2473,63 +2638,31 @@ template<typename input_base_t, typename output_base_t> void basic_sorter_t<inpu
 
 template<typename input_base_t, typename output_base_t> void basic_sorter_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_line) {
-    if(sorts_found < sorts.size()) throw runtime_error("sorter didn't find enough columns");
-    if(sorts_found > sorts.size()) throw runtime_error("sorter didn't find too many sort columns");
-    first_line = 0;
-
-    for(size_t i = 0; i < sorts.size(); ++i) {
-      this->output_token(sort_buf[i], strlen(sort_buf[i]));
-      sort_buf[i][0] = '\0';
+  if(!sort_storage.size() || sort_storage.back() + sort_buf_len + sorts.size() + 2 > sort_end) {
+    if(sort_storage.size() && rows.back().sort == sort_storage.back()) {
+      size_t row_off = rows.back().sort - sort_storage.back();
+      resize_buffer(sort_storage.back(), sort_next, sort_end, sort_buf_len + sorts.size() + 2);
+      rows.back().sort = sort_next + row_off;
     }
-
-    *other_next++ = '\x03';
-    vector<char*>::iterator osi = other_storage.begin();
-    char* p = osi == other_storage.end() ? 0 : *osi;
-    while(1) {
-      const char* s = p;
-      while(*p) ++p;
-      this->output_token(s, p - s);
-      ++p;
-      if(*p == '\x03') { delete[] *osi; break; }
-      else if(*p == '\x04') {
-        delete[] *osi; *osi = 0;
-        ++osi;
-        p = osi == other_storage.end() ? 0 : *osi;
-      }
+    else {
+      if(sort_next) *sort_next = '\x04';
+      sort_storage.resize(sort_storage.size() + 1);
+      size_t cap = sort_buf_len + sorts.size() + 2;
+      if(cap < 256 * 1024) cap = 256 * 1024;
+      sort_storage.back() = new char[cap];
+      sort_next = sort_storage.back();
+      sort_end = sort_storage.back() + cap;
+      if(!rows.back().sort) rows.back().sort = sort_next;
     }
-    other_storage.clear();
-    other_next = 0;
-    other_end = 0;
-    this->output_line();
   }
-  else {
-    if(!sort_storage.size() || sort_storage.back() + sort_buf_len + sorts.size() + 2 > sort_end) {
-      if(sort_storage.size() && rows.back().sort == sort_storage.back()) {
-        size_t row_off = rows.back().sort - sort_storage.back();
-        resize_buffer(sort_storage.back(), sort_next, sort_end, sort_buf_len + sorts.size() + 2);
-        rows.back().sort = sort_next + row_off;
-      }
-      else {
-        if(sort_next) *sort_next = '\x04';
-        sort_storage.resize(sort_storage.size() + 1);
-        size_t cap = sort_buf_len + sorts.size() + 2;
-        if(cap < 256 * 1024) cap = 256 * 1024;
-        sort_storage.back() = new char[cap];
-        sort_next = sort_storage.back();
-        sort_end = sort_storage.back() + cap;
-        if(!rows.back().sort) rows.back().sort = sort_next;
-      }
-    }
-    for(size_t i = 0; i < sorts.size(); ++i) {
-      char* p = sort_buf[i];
-      while(*p) *sort_next++ = *p++;
-      *sort_next++ = '\0';
-    }
-    *sort_next++ = '\x03';
-    *other_next++ = '\x03';
-    for(size_t i = 0; i < sorts.size(); ++i) { *sort_buf[i] = '\0'; }
+  for(size_t i = 0; i < sorts.size(); ++i) {
+    char* p = sort_buf[i];
+    while(*p) *sort_next++ = *p++;
+    *sort_next++ = '\0';
   }
+  *sort_next++ = '\x03';
+  *other_next++ = '\x03';
+  for(size_t i = 0; i < sorts.size(); ++i) { *sort_buf[i] = '\0'; }
 
   ci = columns.begin();
 }
@@ -2591,7 +2724,6 @@ template<typename input_base_t, typename output_base_t> basic_row_joiner_t<input
 template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
   table = 0;
-  first_line = 1;
   more_lines = 0;
   column = 0;
   fill(num_columns.begin(), num_columns.end(), 0);
@@ -2613,43 +2745,52 @@ template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<
   num_columns.push_back(0);
 }
 
-template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
 {
-  if(!first_line) {
-    data_t& d = data[table];
-    if(!d.next || (len + 2) > size_t(d.end - d.next)) {
-      if(d.next) *d.next++ = '\x03';
-      size_t cap = 256 * 1024;
-      if(cap < len + 2) cap = len + 2;
-      d.data.push_back(new char[cap]);
-      d.next = d.data.back();
-      d.end = d.data.back() + cap;
-    }
-    memcpy(d.next, token, len + 1);
-    d.next += len + 1;
+  string stoken(token, len);
+  if(!more_lines) {
+    if(table >= table_name.size()) add_table_name();
+    ++num_columns[table];
+    keys.push_back(stoken);
   }
   else {
-    string stoken(token, len);
-    if(!more_lines) {
-      if(table >= table_name.size()) add_table_name();
-      ++num_columns[table];
-      keys.push_back(stoken);
-    }
-    else {
-      size_t c = column;
-      for(size_t t = 0; t < table; ++t)
-        c += num_columns[t];
-      if(keys[c].compare(token) && keys[c].compare(stoken + " of " + table_name[table]))
-        throw runtime_error("column keys don't match previous tables");
-      ++column;
-    }
+    size_t c = column;
+    for(size_t t = 0; t < table; ++t)
+      c += num_columns[t];
+    if(keys[c].compare(token) && keys[c].compare(stoken + " of " + table_name[table]))
+      throw runtime_error("column keys don't match previous tables");
+    ++column;
   }
+}
+
+template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_keys()
+{
+  data.resize(data.size() + 1);
+  data.back().next = 0;
+  data.back().end = 0;
+  if(more_lines) {
+    if(column != num_columns[table]) throw runtime_error("num_columns doesn't match");
+    column = 0;
+  }
+}
+
+template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+{
+  data_t& d = data[table];
+  if(!d.next || (len + 2) > size_t(d.end - d.next)) {
+    if(d.next) *d.next++ = '\x03';
+    size_t cap = 256 * 1024;
+    if(cap < len + 2) cap = len + 2;
+    d.data.push_back(new char[cap]);
+    d.next = d.data.back();
+    d.end = d.data.back() + cap;
+  }
+  memcpy(d.next, token, len + 1);
+  d.next += len + 1;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   data_t& d = data[table];
   if(!d.next || (sizeof(double) + 2) > size_t(d.end - d.next)) {
     if(d.next) *d.next++ = '\x03';
@@ -2663,21 +2804,7 @@ template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<
   d.next += sizeof(double);
 }
 
-template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_line()
-{
-  if(first_line) {
-    first_line = 0;
-    data.resize(data.size() + 1);
-    data.back().next = 0;
-    data.back().end = 0;
-    if(more_lines) {
-      if(column != num_columns[table]) throw runtime_error("num_columns doesn't match");
-      column = 0;
-    }
-  }
-}
-
-template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_stream() { ++table; first_line = 1; }
+template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_stream() { ++table; }
 
 template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<input_base_t, output_base_t>::process_lines()
 {
@@ -2708,9 +2835,9 @@ template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<
         }
         (*ki) = (*ki) + " of " + table_name[t];
       }
-      this->output_token((*ki).c_str(), (*ki).size());
+      this->output_key((*ki).c_str(), (*ki).size());
     }
-    this->output_line();
+    this->output_keys();
   }
 
   for(typename vector<data_t>::iterator di = data.begin(); di != data.end(); ++di) {
@@ -2748,7 +2875,6 @@ template<typename input_base_t, typename output_base_t> void basic_row_joiner_t<
   }
 
   table = 0;
-  first_line = 1;
   more_lines = 1;
   for(typename vector<data_t>::iterator i = data.begin(); i != data.end(); ++i)
     for(vector<char*>::iterator j = (*i).data.begin(); j != (*i).data.end(); ++j)
@@ -2779,7 +2905,6 @@ template<typename input_base_t, typename output_base_t> basic_col_pruner_t<input
 
 template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_row = 1;
   passthrough = 0;
   column = 0;
   delete[] has_data; has_data = 0;
@@ -2789,25 +2914,50 @@ template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<
   this->reinit_output_state_if(more_passes);
 }
 
-template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
 {
-  if(passthrough) { this->output_token(token, len); return; }
-
-  if(!first_row && token[0]) {
-    if(!(has_data[column / 32] & (1 << (column % 32)))) {
-      has_data[column / 32] |= 1 << (column % 32);
-      ++columns_with_data;
-    }
-  }
-
-  if(!next || (len + 2) > size_t(end - next)) {
+  if(!next || next + len + 2 > end) {
     if(next) *next++ = '\x03';
     size_t cap = 256 * 1024;
     if(cap < len + 2) cap = len + 2;
     data.push_back(new char[cap]);
     next = data.back();
     end = data.back() + cap;
-  } 
+  }
+  memcpy(next, token, len); next += len;
+  *next++ = '\0';
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<input_base_t, output_base_t>::process_keys()
+{
+  num_columns = column;
+  columns_with_data = 0;
+  const size_t has_data_words = (num_columns + 31) / 32;
+  delete[] has_data; has_data = new uint32_t[has_data_words];
+  memset(has_data, 0x00, has_data_words * sizeof(uint32_t));
+  column = 0;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+{
+  if(passthrough) { this->output_token(token, len); return; }
+
+  if(token[0]) {
+    if(!(has_data[column / 32] & (1 << (column % 32)))) {
+      has_data[column / 32] |= 1 << (column % 32);
+      ++columns_with_data;
+    }
+  }
+
+  if(!next || next + len + 2 > end) {
+    if(next) *next++ = '\x03';
+    size_t cap = 256 * 1024;
+    if(cap < len + 2) cap = len + 2;
+    data.push_back(new char[cap]);
+    next = data.back();
+    end = data.back() + cap;
+  }
   memcpy(next, token, len); next += len;
   *next++ = '\0';
   ++column;
@@ -2817,20 +2967,20 @@ template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<
 {
   if(passthrough) { this->output_token(token); return; }
 
-  if(!first_row && !isnan(token)) {
+  if(!isnan(token)) {
     if(!(has_data[column / 32] & (1 << (column % 32)))) {
       has_data[column / 32] |= 1 << (column % 32);
       ++columns_with_data;
     }
   }
 
-  if(!next || (sizeof(double) + 2) > size_t(end - next)) {
+  if(!next || next + sizeof(double) + 2 > end) {
     if(next) *next++ = '\x03';
     size_t cap = 256 * 1024;
     data.push_back(new char[cap]);
     next = data.back();
     end = data.back() + cap;
-  } 
+  }
   *next++ = '\x01';
   memcpy(next, &token, sizeof(double));
   next += sizeof(double);
@@ -2841,31 +2991,23 @@ template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<
 {
   if(passthrough) { this->output_line(); return; }
 
-  if(first_row) {
-    first_row = 0;
-    num_columns = column;
-    columns_with_data = 0;
-    const size_t has_data_words = (num_columns + 31) / 32;
-    delete[] has_data; has_data = new uint32_t[has_data_words];
-    memset(has_data, 0x00, has_data_words * sizeof(uint32_t));
-  }
-  else if(columns_with_data >= num_columns) {
+  if(columns_with_data >= num_columns) {
     if(next) *next++ = '\x03';
+    size_t line = 0;
     size_t c = 0;
     for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
       const char* p = *i;
       while(*p != '\03') {
-        if(*p == '\x01') {
-          this->output_token(*reinterpret_cast<const double*>(++p));
-          p += sizeof(double);
-        }
+        if(*p == '\x01') { this->output_token(*reinterpret_cast<const double*>(++p)); p += sizeof(double); }
         else {
           size_t len = strlen(p);
-          this->output_token(p, len);
-          p += len + 1;;
+          if(!line) this->output_key(p, len);
+          else this->output_token(p, len);
+          p += len + 1;
         }
         if(++c >= num_columns) {
-          this->output_line();
+          if(!line) this->output_keys();
+          else this->output_line();
           c = 0;
         }
       }
@@ -2886,30 +3028,27 @@ template<typename input_base_t, typename output_base_t> void basic_col_pruner_t<
 
   if(next) *next++ = '\x03';
 
+  size_t line = 0;
   size_t c = 0;
   for(vector<char*>::iterator i = data.begin(); i != data.end(); ++i) {
     const char* p = *i;
     while(*p != '\03') {
       if(has_data[c / 32] & (1 << (c % 32))) {
-        if(*p == '\x01') {
-          this->output_token(*reinterpret_cast<const double*>(++p));
-          p += sizeof(double);
-        }
+        if(*p == '\x01') { this->output_token(*reinterpret_cast<const double*>(++p)); p += sizeof(double); }
         else {
           size_t len = strlen(p);
-          this->output_token(p, len);
-          p += len + 1;;
+          if(!line) this->output_key(p, len);
+          else this->output_token(p, len);
+          p += len + 1;
         }
       }
       else {
         if(*p == '\x01') { p += 1 + sizeof(double); }
-        else {
-          while(*p) ++p;
-          ++p;
-        }
+        else { while(*p) ++p; ++p; }
       }
       if(++c >= num_columns) {
-        this->output_line();
+        if(!line++) this->output_keys();
+        else this->output_line();
         c = 0;
       }
     }
@@ -2935,85 +3074,88 @@ template<typename input_base_t, typename output_base_t> void basic_combiner_t<in
   pairs.back().second = to;
 }
 
-template<typename input_base_t, typename output_base_t> void basic_combiner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t, typename output_base_t> void basic_combiner_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
 {
-  if(first_row) {
-    tokens.push_back(string(token, len));
+  tokens.push_back(string(token, len));
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_combiner_t<input_base_t, output_base_t>::process_keys()
+{
+  //create remap_indexes with gaps
+  remap_indexes.resize(tokens.size());
+  for(size_t i = 0; i < remap_indexes.size(); ++i) remap_indexes[i] = i;
+
+  char* buf = new char[2048];
+  char* end = buf + 2048;
+  for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) {
+    for(size_t j = 0; j < tokens.size(); ++j) {
+      int ovector[30]; int rc = pcre_exec((*i).first, 0, tokens[j].c_str(), tokens[j].size(), 0, 0, ovector, 30);
+      if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("combiner match error"); }
+      else {
+        char* next = buf;
+        if(!rc) rc = 10;
+        generate_substitution(tokens[j].c_str(), (*i).second.c_str(), ovector, rc, buf, next, end);
+
+        size_t k = 0;
+        for(; k < tokens.size(); ++k) {
+          if(j == k) continue;
+          if(!tokens[k].compare(buf)) break;
+        }
+        if(k >= tokens.size()) {
+          stringstream msg; msg << "can't find to (" << buf << ')';
+          throw runtime_error(msg.str());
+        }
+        remap_indexes[j] = k;
+        tokens[j] = buf;
+      }
+    }
   }
-  else if(token[0]) {
-    const int index = remap_indexes[column];
-    if(!tokens[index].size()) tokens[index] = token;
-    else throw runtime_error("multiple values for combiner");
+  delete[] buf;
+
+  //compact out the gaps
+  int max_out_index = 0;
+  for(size_t i = 0; i < remap_indexes.size(); ++i)
+    if(max_out_index < remap_indexes[i])
+      max_out_index = remap_indexes[i];
+
+  for(int i = 0; i <= max_out_index;) {
+    vector<int>::iterator it = find(remap_indexes.begin(), remap_indexes.end(), i);
+    if(it != remap_indexes.end()) { ++i; continue; }
+
+    for(size_t j = 0; j < remap_indexes.size(); ++j) if(remap_indexes[j] > i) --remap_indexes[j];
+    --max_out_index;
   }
 
+  //print header
+  for(int i = 0; i <= max_out_index; ++i) {
+    vector<int>::iterator it = find(remap_indexes.begin(), remap_indexes.end(), i);
+    if(it == remap_indexes.end()) throw runtime_error("wth");
+    this->output_key(tokens[distance(remap_indexes.begin(), it)].c_str(), tokens[distance(remap_indexes.begin(), it)].size());
+  }
+
+  //setup for second line
+  tokens.resize(max_out_index + 1);
+  for(vector<string>::iterator i = tokens.begin(); i != tokens.end(); ++i) (*i).clear();
+  this->output_keys();
+  column = 0;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_combiner_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+{
+  if(len) {
+    const int index = remap_indexes[column];
+    if(!tokens[index].size()) tokens[index].assign(token, len);
+    else throw runtime_error("multiple values for combiner");
+  }
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_combiner_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_row) {
-    //create remap_indexes with gaps
-    remap_indexes.resize(tokens.size());
-    for(size_t i = 0; i < remap_indexes.size(); ++i) remap_indexes[i] = i;
-
-    char* buf = new char[2048];
-    char* end = buf + 2048;
-    for(vector<pair<pcre*, string> >::iterator i = pairs.begin(); i != pairs.end(); ++i) {
-      for(size_t j = 0; j < tokens.size(); ++j) {
-        int ovector[30]; int rc = pcre_exec((*i).first, 0, tokens[j].c_str(), tokens[j].size(), 0, 0, ovector, 30);
-        if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("combiner match error"); }
-        else {
-          char* next = buf;
-          if(!rc) rc = 10;
-          generate_substitution(tokens[j].c_str(), (*i).second.c_str(), ovector, rc, buf, next, end);
-
-          size_t k = 0;
-          for(; k < tokens.size(); ++k) {
-            if(j == k) continue;
-            if(!tokens[k].compare(buf)) break;
-          }
-          if(k >= tokens.size()) {
-            stringstream msg; msg << "can't find to (" << buf << ')';
-            throw runtime_error(msg.str());
-          }
-          remap_indexes[j] = k;
-          tokens[j] = buf;
-        }
-      }
-    }
-    delete[] buf;
-
-    //compact out the gaps
-    int max_out_index = 0;
-    for(size_t i = 0; i < remap_indexes.size(); ++i)
-      if(max_out_index < remap_indexes[i])
-        max_out_index = remap_indexes[i];
-
-    for(int i = 0; i <= max_out_index;) {
-      vector<int>::iterator it = find(remap_indexes.begin(), remap_indexes.end(), i);
-      if(it != remap_indexes.end()) { ++i; continue; }
-
-      for(size_t j = 0; j < remap_indexes.size(); ++j) if(remap_indexes[j] > i) --remap_indexes[j];
-      --max_out_index;
-    }
-
-    //print header
-    for(int i = 0; i <= max_out_index; ++i) {
-      vector<int>::iterator it = find(remap_indexes.begin(), remap_indexes.end(), i);
-      if(it == remap_indexes.end()) throw runtime_error("wth");
-      this->output_token(tokens[distance(remap_indexes.begin(), it)].c_str(), tokens[distance(remap_indexes.begin(), it)].size());
-    }
-
-    //setup for second line
-    tokens.resize(max_out_index + 1);
-    for(vector<string>::iterator i = tokens.begin(); i != tokens.end(); ++i) (*i).clear();
-    first_row = 0;
-  }
-  else {
-    for(vector<string>::iterator i = tokens.begin(); i != tokens.end(); ++i) {
-      this->output_token((*i).c_str(), (*i).size());
-      (*i).clear();
-    }
+  for(vector<string>::iterator i = tokens.begin(); i != tokens.end(); ++i) {
+    this->output_token((*i).c_str(), (*i).size());
+    (*i).clear();
   }
   this->output_line();
   column = 0;
@@ -3129,7 +3271,6 @@ template<typename input_base_t, typename output_base_t> void basic_summarizer_t<
 
 template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_line = 1;
   column_flags.clear();
   num_data_columns = 0;
   delete[] values; values = 0;
@@ -3174,78 +3315,97 @@ template<typename input_base_t, typename output_base_t> void basic_summarizer_t<
   exception_regexes.push_back(p);
 }
 
+template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  uint32_t flags = 0;
+  for(vector<pcre*>::iterator gri = pre_sorted_group_regexes.begin(); gri != pre_sorted_group_regexes.end(); ++gri) {
+    int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
+    if(rc >= 0) { flags = 1; break; }
+    else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+  }
+  if(!flags) {
+    for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
+      int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { flags = 2; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+    }
+  }
+  for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
+    int ovector[30]; int rc = pcre_exec((*dri).first, 0, token, len, 0, 0, ovector, 30);
+    if(rc >= 0) { flags |= (*dri).second; }
+    else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+  }
+  if(flags) {
+    for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
+      int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { flags = 0; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
+    }
+  }
+
+  if(flags & 1) { this->output_key(token, len); }
+  if(flags & 2) {
+    if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+    memcpy(group_tokens_next, token, len); group_tokens_next += len;
+    *group_tokens_next++ = '\0';
+  }
+  if(flags & SUM_MISSING) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MISSING", 7, token, len); }
+  if(flags & SUM_COUNT) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "COUNT", 5, token, len); }
+  if(flags & SUM_SUM) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "SUM", 3, token, len); }
+  if(flags & SUM_MIN) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MIN", 3, token, len); }
+  if(flags & SUM_MAX) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MAX", 3, token, len); }
+  if(flags & SUM_AVG) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "AVG", 3, token, len); }
+  if(flags & SUM_VARIANCE) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "VARIANCE", 8, token, len); }
+  if(flags & SUM_STD_DEV) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "STD_DEV", 7, token, len); }
+
+  column_flags.push_back(flags);
+  if(flags & 0xFFFFFFFC) ++num_data_columns;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::process_keys()
+{
+  if(!num_data_columns) throw runtime_error("summarizer has no data columns");
+  for(char* p = group_tokens; p < group_tokens_next; ++p) {
+    size_t len = strlen(p);
+    this->output_key(p, len);
+    p += len;
+  }
+  for(char* p = pre_sorted_group_tokens; p < pre_sorted_group_tokens_next; ++p) { // data column headers
+    size_t len = strlen(p);
+    this->output_key(p, len);
+    p += len;
+  }
+  this->output_keys();
+  values = new double[num_data_columns];
+  cfi = column_flags.begin();
+  vi = values;
+  pre_sorted_group_tokens_next = pre_sorted_group_tokens;
+  group_tokens_next = group_tokens;
+}
+
 template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(first_line) {
-    uint32_t flags = 0;
-    for(vector<pcre*>::iterator gri = pre_sorted_group_regexes.begin(); gri != pre_sorted_group_regexes.end(); ++gri) {
-      int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { flags = 1; break; }
-      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
-    }
-    if(!flags) {
-      for(vector<pcre*>::iterator gri = group_regexes.begin(); gri != group_regexes.end(); ++gri) {
-        int ovector[30]; int rc = pcre_exec(*gri, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { flags = 2; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
-      }
-    }
-    for(vector<pair<pcre*, uint32_t> >::iterator dri = data_regexes.begin(); dri != data_regexes.end(); ++dri) {
-      int ovector[30]; int rc = pcre_exec((*dri).first, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { flags |= (*dri).second; }
-      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
-    }
-    if(flags) {
-      for(vector<pcre*>::iterator ei = exception_regexes.begin(); ei != exception_regexes.end(); ++ei) {
-        int ovector[30]; int rc = pcre_exec(*ei, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { flags = 0; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("summarizer match error");
-      }
-    }
-
-    if(flags & 1) { this->output_token(token, len); }
-    if(flags & 2) {
-      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = '\0';
-    }
-    if(flags & SUM_MISSING) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MISSING", 7, token, len); }
-    if(flags & SUM_COUNT) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "COUNT", 5, token, len); }
-    if(flags & SUM_SUM) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "SUM", 3, token, len); }
-    if(flags & SUM_MIN) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MIN", 3, token, len); }
-    if(flags & SUM_MAX) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "MAX", 3, token, len); }
-    if(flags & SUM_AVG) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "AVG", 3, token, len); }
-    if(flags & SUM_VARIANCE) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "VARIANCE", 8, token, len); }
-    if(flags & SUM_STD_DEV) { print_header(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, "STD_DEV", 7, token, len); }
-
-    column_flags.push_back(flags);
-    if(flags & 0xFFFFFFFC) ++num_data_columns;
+  const uint32_t& flags = *cfi;
+  if(flags & 1) {
+    if(pre_sorted_group_tokens_next + len >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, len + 1);
+    memcpy(pre_sorted_group_tokens_next, token, len); pre_sorted_group_tokens_next += len;
+    *pre_sorted_group_tokens_next++ = '\0';
   }
-  else {
-    const uint32_t& flags = *cfi;
-    if(flags & 1) {
-      if(pre_sorted_group_tokens_next + len >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, len + 1);
-      memcpy(pre_sorted_group_tokens_next, token, len); pre_sorted_group_tokens_next += len;
-      *pre_sorted_group_tokens_next++ = '\0';
-    }
-    else if(flags & 2) {
-      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = '\0';
-    }
-    if(flags & 0xFFFFFFFC) {
-      if(!len) { *vi = numeric_limits<double>::quiet_NaN(); }
-      else { *vi = strtod(token, 0); }
-      ++vi;
-    }
-    ++cfi;
+  else if(flags & 2) {
+    if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+    memcpy(group_tokens_next, token, len); group_tokens_next += len;
+    *group_tokens_next++ = '\0';
   }
+  if(flags & 0xFFFFFFFC) {
+    if(!len) { *vi = numeric_limits<double>::quiet_NaN(); }
+    else { *vi = strtod(token, 0); }
+    ++vi;
+  }
+  ++cfi;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   const uint32_t& flags = *cfi;
   if(flags & 1) {
     if(pre_sorted_group_tokens_next + 31 >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end, 32);
@@ -3261,73 +3421,55 @@ template<typename input_base_t, typename output_base_t> void basic_summarizer_t<
 
 template<typename input_base_t, typename output_base_t> void basic_summarizer_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_line) {
-    if(!num_data_columns) throw runtime_error("summarizer has no data columns");
-    for(char* p = group_tokens; p < group_tokens_next; ++p) {
-      size_t len = strlen(p);
-      this->output_token(p, len);
-      p += len;
+  if(pre_sorted_group_tokens_next != pre_sorted_group_tokens) {
+    if(pre_sorted_group_tokens_next >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end);
+    *pre_sorted_group_tokens_next++ = '\x03';
+    multi_cstr_equal_to e;
+    if(!e(pre_sorted_group_tokens, pre_sorted_group_storage)) {
+      const size_t len = pre_sorted_group_tokens_next - pre_sorted_group_tokens;
+      print_data();
+      if(size_t(pre_sorted_group_storage_end - pre_sorted_group_storage) < len) {
+        delete[] pre_sorted_group_storage;
+        pre_sorted_group_storage = new char[pre_sorted_group_tokens_end - pre_sorted_group_tokens];
+      }
+      memcpy(pre_sorted_group_storage, pre_sorted_group_tokens, len);
     }
-    for(char* p = pre_sorted_group_tokens; p < pre_sorted_group_tokens_next; ++p) { // data column headers
-      size_t len = strlen(p);
-      this->output_token(p, len);
-      p += len;
-    }
-    this->output_line();
-    first_line = 0;
-    values = new double[num_data_columns];
   }
-  else {
-    if(pre_sorted_group_tokens_next != pre_sorted_group_tokens) {
-      if(pre_sorted_group_tokens_next >= pre_sorted_group_tokens_end) resize_buffer(pre_sorted_group_tokens, pre_sorted_group_tokens_next, pre_sorted_group_tokens_end);
-      *pre_sorted_group_tokens_next++ = '\x03';
-      multi_cstr_equal_to e;
-      if(!e(pre_sorted_group_tokens, pre_sorted_group_storage)) {
-        const size_t len = pre_sorted_group_tokens_next - pre_sorted_group_tokens;
-        print_data();
-        if(size_t(pre_sorted_group_storage_end - pre_sorted_group_storage) < len) {
-          delete[] pre_sorted_group_storage;
-          pre_sorted_group_storage = new char[pre_sorted_group_tokens_end - pre_sorted_group_tokens];
-        }
-        memcpy(pre_sorted_group_storage, pre_sorted_group_tokens, len);
-      }
+  if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+  *group_tokens_next++ = '\x03';
+  typename data_map_t::iterator i = data.find(group_tokens);
+  if(i == data.end()) {
+    size_t len = group_tokens_next - group_tokens;
+    if(!group_storage_next || len >= size_t(group_storage_end - group_storage_next)) {
+      if(group_storage_next) *group_storage_next++ = '\04';
+      size_t cap = 256 * 1024;
+      if(cap < len + 1) cap = len + 1;
+      group_storage.push_back(new char[cap]);
+      group_storage_next = group_storage.back();
+      group_storage_end = group_storage.back() + cap;
     }
-    if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-    *group_tokens_next++ = '\x03';
-    typename data_map_t::iterator i = data.find(group_tokens);
-    if(i == data.end()) {
-      size_t len = group_tokens_next - group_tokens;
-      if(!group_storage_next || len >= size_t(group_storage_end - group_storage_next)) {
-        if(group_storage_next) *group_storage_next++ = '\04';
-        size_t cap = 256 * 1024;
-        if(cap < len + 1) cap = len + 1;
-        group_storage.push_back(new char[cap]);
-        group_storage_next = group_storage.back();
-        group_storage_end = group_storage.back() + cap;
-      }
-      memcpy(group_storage_next, group_tokens, len);
-      if(!data_storage_next || num_data_columns > size_t(data_storage_end - data_storage_next)) {
-        size_t rows = (256 * 1024) / (sizeof(data_t) * num_data_columns);
-        if(!rows) rows = 1;
-        data_storage.push_back(new data_t[rows * num_data_columns]);
-        data_storage_next = data_storage.back();
-        data_storage_end = data_storage.back() + (rows * num_data_columns);
-      }
-      i = data.insert(typename data_map_t::value_type(group_storage_next, data_storage_next)).first;
-      group_storage_next += len;
-      data_storage_next += num_data_columns;
+    memcpy(group_storage_next, group_tokens, len);
+    if(!data_storage_next || num_data_columns > size_t(data_storage_end - data_storage_next)) {
+      size_t rows = (256 * 1024) / (sizeof(data_t) * num_data_columns);
+      if(!rows) rows = 1;
+      data_storage.push_back(new data_t[rows * num_data_columns]);
+      data_storage_next = data_storage.back();
+      data_storage_end = data_storage.back() + (rows * num_data_columns);
     }
-    vi = values;
-    for(size_t c = 0; c < num_data_columns; ++c, ++vi) {
-      data_t& d = (*i).second[c];
-      if(isnan(*vi)) ++d.missing;
-      else {
-        ++d.count;
-        d.sum += *vi;
-        d.sum_of_squares += *vi * *vi;
-        if(*vi < d.min) d.min = *vi;
-        if(*vi > d.max) d.max = *vi;
-      }
+    i = data.insert(typename data_map_t::value_type(group_storage_next, data_storage_next)).first;
+    group_storage_next += len;
+    data_storage_next += num_data_columns;
+  }
+  vi = values;
+  for(size_t c = 0; c < num_data_columns; ++c, ++vi) {
+    data_t& d = (*i).second[c];
+    if(isnan(*vi)) ++d.missing;
+    else {
+      ++d.count;
+      d.sum += *vi;
+      d.sum_of_squares += *vi * *vi;
+      if(*vi < d.min) d.min = *vi;
+      if(*vi > d.max) d.max = *vi;
     }
   }
 
@@ -3344,7 +3486,6 @@ template<typename input_base_t, typename output_base_t> void basic_summarizer_t<
 
 template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_row = 1;
   column = 0;
   columns.clear();
   for(vector<pair<char*, char*> >::iterator i = leave_tokens.begin(); i != leave_tokens.end(); ++i) delete[] (*i).first;
@@ -3364,58 +3505,70 @@ template<typename input_base_t, typename output_base_t> void basic_range_stacker
   ranges.back().new_col_name = new_name;
 }
 
+template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  int match = 0;
+  for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
+    if(!(*i).start_name.compare(0, string::npos, token, len)) { match = 1; (*i).start_col_index = columns.size(); }
+    else if(!(*i).stop_name.compare(0, string::npos, token, len)) { match = 1; (*i).stop_col_index = columns.size(); }
+  }
+  if(match) {
+    columns.resize(columns.size() + 1);
+    columns.back().col = column;
+  }
+  else this->output_key(token, len);
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_keys()
+{
+  for(typename vector<range_t>::const_iterator i = ranges.begin(); i != ranges.end(); ++i) {
+    if((*i).start_col_index >= column) throw runtime_error("range_stacker missing start");
+    else if((*i).stop_col_index >= column) throw runtime_error("range_stacker missing stop");
+    this->output_key((*i).new_col_name.c_str(), (*i).new_col_name.size());
+  }
+  this->output_keys();
+  column = 0;
+  ci = columns.begin();
+  leave_tokens_index = 0;
+  leave_tokens_next = 0;
+}
+
 template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(first_row) {
-    int match = 0;
-    for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
-      if(!(*i).start_name.compare(0, string::npos, token, len)) { match = 1; (*i).start_col_index = columns.size(); }
-      else if(!(*i).stop_name.compare(0, string::npos, token, len)) { match = 1; (*i).stop_col_index = columns.size(); }
-    }
-    if(match) {
-      columns.resize(columns.size() + 1);
-      columns.back().col = column;
-    }
-    else this->output_token(token, len);
+  if(ci != columns.end() && (*ci).col == column) {
+    char* next = 0; (*ci).val = strtod(token, &next);
+    if(next == token) (*ci).val = numeric_limits<double>::quiet_NaN();
+    ++ci;
   }
   else {
-    if(ci != columns.end() && (*ci).col == column) {
-      char* next = 0; (*ci).val = strtod(token, &next);
-      if(next == token) (*ci).val = numeric_limits<double>::quiet_NaN();
-      ++ci;
-    }
-    else {
-      if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second) {
-        if(leave_tokens_next) { *leave_tokens_next++ = '\x03'; ++leave_tokens_index; }
-        if(leave_tokens_index < leave_tokens.size()) {
-          size_t cap = size_t(leave_tokens[leave_tokens_index].second - leave_tokens_next);
-          if(cap < len + 2) {
-            cap = len + 2;
-            delete[] leave_tokens[leave_tokens_index].first;
-            leave_tokens[leave_tokens_index].first = new char[cap];
-            leave_tokens[leave_tokens_index].second = leave_tokens[leave_tokens_index].first + cap;
-          }
+    if(!leave_tokens_next || leave_tokens_next + len + 2 > leave_tokens[leave_tokens_index].second) {
+      if(leave_tokens_next) { *leave_tokens_next++ = '\x03'; ++leave_tokens_index; }
+      if(leave_tokens_index < leave_tokens.size()) {
+        size_t cap = size_t(leave_tokens[leave_tokens_index].second - leave_tokens_next);
+        if(cap < len + 2) {
+          cap = len + 2;
+          delete[] leave_tokens[leave_tokens_index].first;
+          leave_tokens[leave_tokens_index].first = new char[cap];
+          leave_tokens[leave_tokens_index].second = leave_tokens[leave_tokens_index].first + cap;
         }
-        else {
-          size_t cap = 256 * 1024;
-          if(cap < len + 2) cap = len + 2;
-          char* p = new char[cap];
-          leave_tokens.push_back(pair<char*, char*>(p, p + cap));
-        }
-        leave_tokens_next = leave_tokens[leave_tokens_index].first;
       }
-      memcpy(leave_tokens_next, token, len + 1);
-      leave_tokens_next += len + 1;
+      else {
+        size_t cap = 256 * 1024;
+        if(cap < len + 2) cap = len + 2;
+        char* p = new char[cap];
+        leave_tokens.push_back(pair<char*, char*>(p, p + cap));
+      }
+      leave_tokens_next = leave_tokens[leave_tokens_index].first;
     }
+    memcpy(leave_tokens_next, token, len + 1);
+    leave_tokens_next += len + 1;
   }
-
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(ci != columns.end() && (*ci).col == column) {
     (*ci).val = token;
     ++ci;
@@ -3438,46 +3591,36 @@ template<typename input_base_t, typename output_base_t> void basic_range_stacker
   ++column;
 }
 
-template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_line() {
-  if(first_row) {
-    first_row = 0;
-    for(typename vector<range_t>::const_iterator i = ranges.begin(); i != ranges.end(); ++i) {
-      if((*i).start_col_index >= column) throw runtime_error("range_stacker missing start");
-      else if((*i).stop_col_index >= column) throw runtime_error("range_stacker missing stop");
-      this->output_token((*i).new_col_name.c_str(), (*i).new_col_name.size());
-    }
-    this->output_line();
+template<typename input_base_t, typename output_base_t> void basic_range_stacker_t<input_base_t, output_base_t>::process_line()
+{
+  *leave_tokens_next++ = '\x04';
+  bool done = 1;
+  for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
+    (*i).cur_val = columns[(*i).start_col_index].val;
+
+    if((*i).cur_val <= columns[(*i).stop_col_index].val) done = 0;
+    else (*i).cur_val = numeric_limits<double>::quiet_NaN();
   }
-  else {
-    *leave_tokens_next++ = '\x04';
-    bool done = 1;
-    for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i) {
-      (*i).cur_val = columns[(*i).start_col_index].val;
-
-      if((*i).cur_val <= columns[(*i).stop_col_index].val) done = 0;
-      else (*i).cur_val = numeric_limits<double>::quiet_NaN();
+  while(!done) {
+    vector<pair<char*, char*> >::iterator lti = leave_tokens.begin();
+    if(lti != leave_tokens.end()) {
+      for(char* ltp = (*lti).first; 1;) {
+        if(*ltp == '\x01') { this->output_token(*reinterpret_cast<double*>(++ltp)); ltp += sizeof(double); }
+        else if(*ltp == '\x03') ltp = (*++lti).first;
+        else if(*ltp == '\x04') break;
+        else { size_t len = strlen(ltp); this->output_token(ltp, len); ltp += len + 1; }
+      }
     }
-    while(!done) {
-      vector<pair<char*, char*> >::iterator lti = leave_tokens.begin();
-      if(lti != leave_tokens.end()) {
-        for(char* ltp = (*lti).first; 1;) {
-          if(*ltp == '\x01') { this->output_token(*reinterpret_cast<double*>(++ltp)); ltp += sizeof(double); }
-          else if(*ltp == '\x03') ltp = (*++lti).first;
-          else if(*ltp == '\x04') break;
-          else { size_t len = strlen(ltp); this->output_token(ltp, len); ltp += len + 1; }
-        }
-      }
-      for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i)
-        this->output_token((*i).cur_val);
-      this->output_line();
+    for(typename vector<range_t>::iterator i = ranges.begin(); i != ranges.end(); ++i)
+      this->output_token((*i).cur_val);
+    this->output_line();
 
-      done = 1;
-      for(typename vector<range_t>::reverse_iterator i = ranges.rbegin(); i != ranges.rend(); ++i) {
-        if(isnan((*i).cur_val)) continue;
-        (*i).cur_val += 1.0;
-        if((*i).cur_val > columns[(*i).stop_col_index].val) (*i).cur_val = columns[(*i).start_col_index].val;
-        else { done = 0; break; }
-      }
+    done = 1;
+    for(typename vector<range_t>::reverse_iterator i = ranges.rbegin(); i != ranges.rend(); ++i) {
+      if(isnan((*i).cur_val)) continue;
+      (*i).cur_val += 1.0;
+      if((*i).cur_val > columns[(*i).stop_col_index].val) (*i).cur_val = columns[(*i).start_col_index].val;
+      else { done = 0; break; }
     }
   }
 
@@ -3513,19 +3656,22 @@ template<typename input_base_t, typename output_base_t> void basic_base_converte
   regex_base_conv.back().to = to;
 }
 
+template<typename input_base_t, typename output_base_t> void basic_base_converter_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
+{
+  conv_t c; c.from = -1; c.to = 0;
+  for(typename vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
+    int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
+    if(rc >= 0) { c.from = (*i).from; c.to = (*i).to; break; }
+    else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("base_converter match error");
+  }
+  conv.push_back(c);
+  this->output_key(token, len);
+  ++column;
+}
+
 template<typename input_base_t, typename output_base_t> void basic_base_converter_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
 {
-  if(first_row) {
-    conv_t c; c.from = -1; c.to = 0;
-    for(typename vector<regex_base_conv_t>::const_iterator i = regex_base_conv.begin(); i != regex_base_conv.end(); ++i) {
-      int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { c.from = (*i).from; c.to = (*i).to; break; }
-      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("base_converter match error");
-    }
-    conv.push_back(c);
-    this->output_token(token, len);
-  }
-  else if(conv[column].from < 0) this->output_token(token, len);
+  if(conv[column].from < 0) this->output_token(token, len);
   else {
     char* next = 0;
     long int ivalue = 0;
@@ -3541,14 +3687,11 @@ template<typename input_base_t, typename output_base_t> void basic_base_converte
       else this->output_token(token, len);
     }
   }
-
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_base_converter_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(conv[column].to == 8) { char buf[256]; int len = sprintf(buf, "%#lo", (long int)token); this->output_token(buf, len); }
   else if(conv[column].to == 16) { char buf[256]; int len = sprintf(buf, "%#lx", (long int)token); this->output_token(buf, len); }
   else this->output_token(token);
@@ -3585,7 +3728,6 @@ template<typename input_base_t, typename output_base_t> void basic_variance_anal
 
 template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::reinit_state(int more_passes)
 {
-  first_line = 1;
   column_type.clear();
   delete[] group_tokens; group_tokens = new char[2048];
   group_tokens_next = group_tokens;
@@ -3620,53 +3762,59 @@ template<typename input_base_t, typename output_base_t> void basic_variance_anal
   exception_regexes.push_back(p);
 }
 
-template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_key(const char* token, size_t len)
 {
-  if(first_line) {
-    char type = 0;
-    for(vector<pcre*>::iterator j = group_regexes.begin(); j != group_regexes.end(); ++j) {
+  char type = 0;
+  for(vector<pcre*>::iterator j = group_regexes.begin(); j != group_regexes.end(); ++j) {
+    int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
+    if(rc >= 0) { type = 1; break; }
+    else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("variance_analyzer match error");
+  }
+  if(!type) {
+    for(vector<pcre*>::iterator j = data_regexes.begin(); j != data_regexes.end(); ++j) {
       int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
-      if(rc >= 0) { type = 1; break; }
+      if(rc >= 0) { type = 2; break; }
       else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("variance_analyzer match error");
     }
-    if(!type) {
-      for(vector<pcre*>::iterator j = data_regexes.begin(); j != data_regexes.end(); ++j) {
-        int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { type = 2; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("variance_analyzer match error");
-      }
-    }
-    if(type) {
-      for(vector<pcre*>::iterator j = exception_regexes.begin(); j != exception_regexes.end(); ++j) {
-        int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
-        if(rc >= 0) { type = 0; break; }
-        else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("variance_analyzer match error");
-      }
-    }
-    column_type.push_back(type);
-    if(type == 2) data_keywords.push_back(string(token, len));
   }
-  else {
-    if(cti == column_type.end()) return;
+  if(type) {
+    for(vector<pcre*>::iterator j = exception_regexes.begin(); j != exception_regexes.end(); ++j) {
+      int ovector[30]; int rc = pcre_exec(*j, 0, token, len, 0, 0, ovector, 30);
+      if(rc >= 0) { type = 0; break; }
+      else if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("variance_analyzer match error");
+    }
+  }
+  column_type.push_back(type);
+  if(type == 2) data_keywords.push_back(string(token, len));
+}
 
-    if(*cti == 1) {
-      if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
-      memcpy(group_tokens_next, token, len); group_tokens_next += len;
-      *group_tokens_next++ = '\0';
-    }
-    else if(*cti == 2) {
-      char* next; *vi = strtod(token, &next);
-      if(next == token) *vi = numeric_limits<double>::quiet_NaN();
-      ++vi;
-    }
-    ++cti;
+template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_keys()
+{
+  values = new double[data_keywords.size()];
+  cti = column_type.begin();
+  group_tokens_next = group_tokens;
+  vi = values;
+}
+
+template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_token(const char* token, size_t len)
+{
+  if(cti == column_type.end()) return;
+
+  if(*cti == 1) {
+    if(group_tokens_next + len >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end, len + 1);
+    memcpy(group_tokens_next, token, len); group_tokens_next += len;
+    *group_tokens_next++ = '\0';
   }
+  else if(*cti == 2) {
+    char* next; *vi = strtod(token, &next);
+    if(next == token) *vi = numeric_limits<double>::quiet_NaN();
+    ++vi;
+  }
+  ++cti;
 }
 
 template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_token(double token)
 {
-  if(first_line) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(cti == column_type.end()) return;
 
   if(*cti == 1) {
@@ -3679,41 +3827,34 @@ template<typename input_base_t, typename output_base_t> void basic_variance_anal
 
 template<typename input_base_t, typename output_base_t> void basic_variance_analyzer_t<input_base_t, output_base_t>::process_line()
 {
-  if(first_line) {
-    first_line = 0;
-    values = new double[data_keywords.size()];
-  }
-  else {
-    if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
-    *group_tokens_next++ = '\x03';
+  if(group_tokens_next >= group_tokens_end) resize_buffer(group_tokens, group_tokens_next, group_tokens_end);
+  *group_tokens_next++ = '\x03';
 
-    groups_t::iterator gi = groups.find(group_tokens);
-    if(gi == groups.end()) {
-      size_t len = group_tokens_next - group_tokens;
-      if(!group_storage_next || len + 1 > size_t(group_storage_end - group_storage_next)) {
-        if(group_storage_next) *group_storage_next++ = '\x04';
-        size_t cap = 256 * 1024;
-        if(cap < len + 1) cap = len + 1;
-        group_storage.push_back(new char[cap]);
-        group_storage_next = group_storage.back();
-        group_storage_end = group_storage.back() + cap;
-      }
-      memcpy(group_storage_next, group_tokens, len);
-      gi = groups.insert(groups_t::value_type(group_storage_next, groups.size())).first;
-      group_storage_next += len;
-      data.push_back(new treatment_data_t[data_keywords.size()]);
+  groups_t::iterator gi = groups.find(group_tokens);
+  if(gi == groups.end()) {
+    size_t len = group_tokens_next - group_tokens;
+    if(!group_storage_next || len + 1 > size_t(group_storage_end - group_storage_next)) {
+      if(group_storage_next) *group_storage_next++ = '\x04';
+      size_t cap = 256 * 1024;
+      if(cap < len + 1) cap = len + 1;
+      group_storage.push_back(new char[cap]);
+      group_storage_next = group_storage.back();
+      group_storage_end = group_storage.back() + cap;
     }
-    vi = values;
-    treatment_data_t* d = data[(*gi).second];
-    for(size_t i = 0; i < data_keywords.size(); ++i, ++vi, ++d) {
-      if(!isnan(*vi)) {
-        ++d->count;
-        d->sum += *vi;
-        d->sum_of_squares += *vi * *vi;
-      }
+    memcpy(group_storage_next, group_tokens, len);
+    gi = groups.insert(groups_t::value_type(group_storage_next, groups.size())).first;
+    group_storage_next += len;
+    data.push_back(new treatment_data_t[data_keywords.size()]);
+  }
+  vi = values;
+  treatment_data_t* d = data[(*gi).second];
+  for(size_t i = 0; i < data_keywords.size(); ++i, ++vi, ++d) {
+    if(!isnan(*vi)) {
+      ++d->count;
+      d->sum += *vi;
+      d->sum_of_squares += *vi * *vi;
     }
   }
-
   cti = column_type.begin();
   group_tokens_next = group_tokens;
   vi = values;
@@ -3723,7 +3864,7 @@ template<typename input_base_t, typename output_base_t> void basic_variance_anal
 {
   if(group_storage_next) *group_storage_next++ = '\x04';
 
-  this->output_token("keyword", 7);
+  this->output_key("keyword", 7);
   vector<char*>::const_iterator gsi = group_storage.begin();
   char* gsp = gsi == group_storage.end() ? 0 : *gsi;
   while(gsp) {
@@ -3733,15 +3874,15 @@ template<typename input_base_t, typename output_base_t> void basic_variance_anal
       else if(*gsp == '\x03') { --group_tokens_next; *group_tokens_next++ = ')'; *group_tokens_next = '\0'; break; }
       else { *group_tokens_next++ = *gsp; }
     }
-    memcpy(group_tokens + 4, "AVG(", 4); this->output_token(group_tokens + 4, group_tokens_next - group_tokens - 4);
-    memcpy(group_tokens, "STD_DEV(", 8); this->output_token(group_tokens, group_tokens_next - group_tokens);
+    memcpy(group_tokens + 4, "AVG(", 4); this->output_key(group_tokens + 4, group_tokens_next - group_tokens - 4);
+    memcpy(group_tokens, "STD_DEV(", 8); this->output_key(group_tokens, group_tokens_next - group_tokens);
     if(*++gsp == '\x04') { ++gsi; gsp = gsi == group_storage.end() ? 0 : *gsi; }
   }
-  this->output_token("AVG", 3);
-  this->output_token("STD_DEV", 7);
-  this->output_token("f", 1);
-  this->output_token("p", 1);
-  this->output_line();
+  this->output_key("AVG", 3);
+  this->output_key("STD_DEV", 7);
+  this->output_key("f", 1);
+  this->output_key("p", 1);
+  this->output_keys();
 
   const size_t max_groups = groups.size();
   for(gsi = group_storage.begin(); gsi != group_storage.end(); ++gsi) delete[] *gsi;
@@ -3825,52 +3966,51 @@ void basic_unary_col_adder_t<input_base_t, output_base_t, op_in_t, op_out_t, op_
 }
 
 template<typename input_base_t, typename output_base_t, typename op_in_t, typename op_out_t, typename op_t>
+void basic_unary_col_adder_t<input_base_t, output_base_t, op_in_t, op_out_t, op_t>::process_key(const char* token, size_t len)
+{
+  bool matched = 0;
+  bool remove_source = 0;
+  for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) {
+    int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
+    if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_unary_col_adder match error"); }
+    else {
+      if(!matched) {
+        columns.resize(columns.size() + 1);
+        columns.back().col = column;
+        columns.back().passthrough = 1;
+        matched = 1;
+      }
+      if((*i).remove_source) { columns.back().passthrough = 0; remove_source = 1; }
+      columns.back().ops.push_back((*i).op);
+      char* next = buf;
+      if(!rc) rc = 10;
+      generate_substitution(token, (*i).new_key.c_str(), ovector, rc, buf, next, end);
+      this->output_key(buf, next - buf - 1);
+    }
+  }
+  if(!remove_source) this->output_key(token, len);
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t, typename op_in_t, typename op_out_t, typename op_t>
 void basic_unary_col_adder_t<input_base_t, output_base_t, op_in_t, op_out_t, op_t>::process_token(const char* token, size_t len)
 {
-  if(first_row) {
-    bool matched = 0;
-    bool remove_source = 0;
-    for(typename vector<inst_t>::iterator i = insts.begin(); i != insts.end(); ++i) {
-      int ovector[30]; int rc = pcre_exec((*i).regex, 0, token, len, 0, 0, ovector, 30);
-      if(rc < 0) { if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_unary_col_adder match error"); }
-      else {
-        if(!matched) {
-          columns.resize(columns.size() + 1);
-          columns.back().col = column;
-          columns.back().passthrough = 1;
-          matched = 1;
-        }
-        if((*i).remove_source) { columns.back().passthrough = 0; remove_source = 1; }
-        columns.back().ops.push_back((*i).op);
-        char* next = buf;
-        if(!rc) rc = 10;
-        generate_substitution(token, (*i).new_key.c_str(), ovector, rc, buf, next, end);
-        this->output_token(buf, next - buf - 1);
-      }
+  if(ci != columns.end() && column == (*ci).col) {
+    for(typename vector<op_t>::iterator oi = (*ci).ops.begin(); oi != (*ci).ops.end(); ++oi) {
+      op_in_t in = get_in_value(token, len, (op_in_t*)0);
+      op_out_t val = (*oi)(in);
+      this->output_token(val);
     }
-    if(!remove_source) this->output_token(token, len);
+    if((*ci).passthrough) this->output_token(token, len);
+    ++ci;
   }
-  else {
-    if(ci != columns.end() && column == (*ci).col) {
-      for(typename vector<op_t>::iterator oi = (*ci).ops.begin(); oi != (*ci).ops.end(); ++oi) {
-        op_in_t in = get_in_value(token, len, (op_in_t*)0);
-        op_out_t val = (*oi)(in);
-        this->output_token(val);
-      }
-      if((*ci).passthrough) this->output_token(token, len);
-      ++ci;
-    }
-    else this->output_token(token, len);
-  }
-
+  else this->output_token(token, len);
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t, typename op_in_t, typename op_out_t, typename op_t>
 void basic_unary_col_adder_t<input_base_t, output_base_t, op_in_t, op_out_t, op_t>::process_token(double token)
 {
-  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(ci != columns.end() && column == (*ci).col) {
     for(typename vector<op_t>::iterator oi = (*ci).ops.begin(); oi != (*ci).ops.end(); ++oi) {
       char buf[32];
@@ -3882,7 +4022,6 @@ void basic_unary_col_adder_t<input_base_t, output_base_t, op_in_t, op_out_t, op_
     ++ci;
   }
   else this->output_token(token);
-
   ++column;
 }
 
@@ -3902,7 +4041,6 @@ basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out
 template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
 void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::reinit_state(int more_passes)
 {
-  first_row = 1;
   column = 0;
   for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
   key_storage.clear();
@@ -3930,52 +4068,138 @@ void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, o
 }
 
 template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
-void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_token(const char* token, size_t len)
+void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_key(const char* token, size_t len)
 {
-  if(first_row) {
-    if(len + 1 > size_t(key_storage_end - key_storage_next)) {
-      size_t cap = 256 * 1024;
-      if(cap < len + 1) cap = len + 1;
-      key_storage.push_back(new char[cap]);
-      key_storage_next = key_storage.back();
-      key_storage_end = key_storage.back() + cap;
-    }
-    keys.push_back(key_storage_next);
-    memcpy(key_storage_next, token, len); key_storage_next += len;
-    *key_storage_next++ = '\0';
+  if(len + 1 > size_t(key_storage_end - key_storage_next)) {
+    size_t cap = 256 * 1024;
+    if(cap < len + 1) cap = len + 1;
+    key_storage.push_back(new char[cap]);
+    key_storage_next = key_storage.back();
+    key_storage_end = key_storage.back() + cap;
   }
-  else {
-    if(ci != columns.end() && (*ci).col == column) {
-      col_t& c = *ci;
-      if(c.need_double) {
-        char* next; c.double_val = strtod(token, &next);
-        if(next == token) c.double_val = numeric_limits<double>::quiet_NaN();
-      }
-      if(c.need_c_str) {
-        if(!c.c_str_val.c_str || c.c_str_val.c_str + len >= c.c_str_end) {
-          const size_t cap = ((len + 1) * 150) / 100;
-          c.c_str_val.c_str = new char[cap];
-          c.c_str_end = c.c_str_val.c_str + cap;
+  keys.push_back(key_storage_next);
+  memcpy(key_storage_next, token, len); key_storage_next += len;
+  *key_storage_next++ = '\0';
+  ++column;
+}
+
+template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
+void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_keys()
+{
+  char* buf = new char[2048];
+  char* end = buf + 2048;
+  size_t* lens = new size_t[keys.size()];
+  map<size_t, col_info_t> cols;
+  map<size_t, vector<new_col_info_t> > new_cols;
+
+  for(column = 0; column < keys.size(); ++column) {
+    lens[column] = strlen(keys[column]);
+    for(typename vector<inst_t>::iterator ii = insts.begin(); ii != insts.end(); ++ii) {
+      int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column], lens[column], 0, 0, ovector, 30);
+      if(rc < 0){ if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_binary_col_adder match error"); }
+      else {
+        char* next = buf;
+        if(!rc) rc = 10;
+        generate_substitution(keys[column], (*ii).other_key.c_str(), ovector, rc, buf, next, end);
+        size_t other_col = 0;
+        while(other_col < keys.size() && strcmp(keys[other_col], buf)) ++other_col;
+        if(other_col >= keys.size()) {
+          stringstream msg; msg << "basic_binary_col_adder could not find " << buf << " which is paired with " << keys[column];
+          throw runtime_error(msg.str());
         }
-        char* next = (char*)c.c_str_val.c_str;
-        memcpy(next, token, len); next += len;
-        *next = '\0';
-        c.c_str_val.len = len;
+
+        col_info_t i; i.index = numeric_limits<size_t>::max(); i.need_double = 0; i.need_c_str = 0; i.passthrough = 1;
+        col_info_t* p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);
+        if(typeid(op_in1_t) == typeid(double)) p->need_double = 1;
+        else p->need_c_str = 1;
+        if((*ii).remove_source) p->passthrough = 0;
+
+        p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(other_col, i)).first).second);
+        if(typeid(op_in2_t) == typeid(double)) p->need_double = 1;
+        else p->need_c_str = 1;
+        if((*ii).remove_other) p->passthrough = 0;
+
+        next = buf;
+        generate_substitution(keys[column], (*ii).new_key.c_str(), ovector, rc, buf, next, end);
+        vector<new_col_info_t>& nciv = new_cols[column];
+        nciv.resize(nciv.size() + 1);
+        nciv.back().other_col = other_col;
+        nciv.back().new_key.assign(buf, next - buf - 1);
+        nciv.back().op = &(*ii).op;
       }
-      if(c.passthrough) this->output_token(token, len);
-      ++ci;
     }
-    else this->output_token(token, len);
   }
 
+  for(column = 0; column < keys.size(); ++column) {
+    typename map<size_t, col_info_t>::iterator i = cols.find(column);
+    if(i == cols.end() || (*i).second.passthrough)
+      this->output_key(keys[column], lens[column]);
+  }
+
+  columns.reserve(cols.size());
+  for(typename map<size_t, col_info_t>::iterator i = cols.begin(); i != cols.end(); ++i) {
+    (*i).second.index = columns.size();
+    columns.resize(columns.size() + 1);
+    col_t& c = columns.back();
+    c.col = (*i).first;
+    c.need_double = (*i).second.need_double;
+    c.need_c_str = (*i).second.need_c_str;
+    c.passthrough = (*i).second.passthrough;
+  }
+
+  for(typename map<size_t, vector<new_col_info_t> >::iterator i = new_cols.begin(); i != new_cols.end(); ++i) {
+    for(typename vector<new_col_info_t>::iterator j = (*i).second.begin(); j != (*i).second.end(); ++j) {
+      new_columns.resize(new_columns.size() + 1);
+      new_col_t& c = new_columns.back();
+      c.col_index = cols[(*i).first].index;
+      c.other_col_index = cols[(*j).other_col].index;
+      c.op = *(*j).op;
+      this->output_key((*j).new_key.c_str(), (*j).new_key.size());
+    }
+  }
+
+  delete[] lens;
+  delete[] buf;
+  keys.clear();
+  for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
+  key_storage.clear();
+  key_storage_next = 0;
+  key_storage_end = 0;
+  this->output_keys();
+  column = 0;
+  ci = columns.begin();
+}
+
+template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
+void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_token(const char* token, size_t len)
+{
+  if(ci != columns.end() && (*ci).col == column) {
+    col_t& c = *ci;
+    if(c.need_double) {
+      char* next; c.double_val = strtod(token, &next);
+      if(next == token) c.double_val = numeric_limits<double>::quiet_NaN();
+    }
+    if(c.need_c_str) {
+      if(!c.c_str_val.c_str || c.c_str_val.c_str + len >= c.c_str_end) {
+        const size_t cap = ((len + 1) * 150) / 100;
+        c.c_str_val.c_str = new char[cap];
+        c.c_str_end = c.c_str_val.c_str + cap;
+      }
+      char* next = (char*)c.c_str_val.c_str;
+      memcpy(next, token, len); next += len;
+      *next = '\0';
+      c.c_str_val.len = len;
+    }
+    if(c.passthrough) this->output_token(token, len);
+    ++ci;
+  }
+  else this->output_token(token, len);
   ++column;
 }
 
 template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
 void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_token(double token)
 {
-  if(first_row) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); return; }
-
   if(ci != columns.end() && (*ci).col == column) {
     col_t& c = *ci;
     if(c.need_double) { c.double_val = token; }
@@ -3997,95 +4221,11 @@ void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, o
 template<typename input_base_t, typename output_base_t, typename op_in1_t, typename op_in2_t, typename op_out_t, typename op_t>
 void basic_binary_col_adder_t<input_base_t, output_base_t, op_in1_t, op_in2_t, op_out_t, op_t>::process_line()
 {
-  if(first_row) {
-    char* buf = new char[2048];
-    char* end = buf + 2048;
-    size_t* lens = new size_t[keys.size()];
-    map<size_t, col_info_t> cols;
-    map<size_t, vector<new_col_info_t> > new_cols;
-
-    for(column = 0; column < keys.size(); ++column) {
-      lens[column] = strlen(keys[column]);
-      for(typename vector<inst_t>::iterator ii = insts.begin(); ii != insts.end(); ++ii) {
-        int ovector[30]; int rc = pcre_exec((*ii).regex, 0, keys[column], lens[column], 0, 0, ovector, 30);
-        if(rc < 0){ if(rc != PCRE_ERROR_NOMATCH) throw runtime_error("basic_binary_col_adder match error"); }
-        else {
-          char* next = buf;
-          if(!rc) rc = 10;
-          generate_substitution(keys[column], (*ii).other_key.c_str(), ovector, rc, buf, next, end);
-          size_t other_col = 0;
-          while(other_col < keys.size() && strcmp(keys[other_col], buf)) ++other_col;
-          if(other_col >= keys.size()) {
-            stringstream msg; msg << "basic_binary_col_adder could not find " << buf << " which is paired with " << keys[column];
-            throw runtime_error(msg.str());
-          }
-
-          col_info_t i; i.index = numeric_limits<size_t>::max(); i.need_double = 0; i.need_c_str = 0; i.passthrough = 1;
-          col_info_t* p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(column, i)).first).second);
-          if(typeid(op_in1_t) == typeid(double)) p->need_double = 1;
-          else p->need_c_str = 1;
-          if((*ii).remove_source) p->passthrough = 0;
-
-          p = &((*cols.insert(typename map<size_t, col_info_t>::value_type(other_col, i)).first).second);
-          if(typeid(op_in2_t) == typeid(double)) p->need_double = 1;
-          else p->need_c_str = 1;
-          if((*ii).remove_other) p->passthrough = 0;
-
-          next = buf;
-          generate_substitution(keys[column], (*ii).new_key.c_str(), ovector, rc, buf, next, end);
-          vector<new_col_info_t>& nciv = new_cols[column];
-          nciv.resize(nciv.size() + 1);
-          nciv.back().other_col = other_col;
-          nciv.back().new_key.assign(buf, next - buf - 1);
-          nciv.back().op = &(*ii).op;
-        }
-      }
-    }
-
-    for(column = 0; column < keys.size(); ++column) {
-      typename map<size_t, col_info_t>::iterator i = cols.find(column);
-      if(i == cols.end() || (*i).second.passthrough)
-        this->output_token(keys[column], lens[column]);
-    }
-
-    columns.reserve(cols.size());
-    for(typename map<size_t, col_info_t>::iterator i = cols.begin(); i != cols.end(); ++i) {
-      (*i).second.index = columns.size();
-      columns.resize(columns.size() + 1);
-      col_t& c = columns.back();
-      c.col = (*i).first;
-      c.need_double = (*i).second.need_double;
-      c.need_c_str = (*i).second.need_c_str;
-      c.passthrough = (*i).second.passthrough;
-    }
-
-    for(typename map<size_t, vector<new_col_info_t> >::iterator i = new_cols.begin(); i != new_cols.end(); ++i) {
-      for(typename vector<new_col_info_t>::iterator j = (*i).second.begin(); j != (*i).second.end(); ++j) {
-        new_columns.resize(new_columns.size() + 1);
-        new_col_t& c = new_columns.back();
-        c.col_index = cols[(*i).first].index;
-        c.other_col_index = cols[(*j).other_col].index;
-        c.op = *(*j).op;
-        this->output_token((*j).new_key.c_str(), (*j).new_key.size());
-      }
-    }
-
-    delete[] lens;
-    delete[] buf;
-    first_row = 0;
-    keys.clear();
-    for(vector<char*>::const_iterator i = key_storage.begin(); i != key_storage.end(); ++i) delete[] *i;
-    key_storage.clear();
-    key_storage_next = 0;
-    key_storage_end = 0;
-  }
-  else {
-    for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
-      op_in1_t& in1 = get_in_value((*i).col_index, (op_in1_t*)0);
-      op_in2_t& in2 = get_in_value((*i).other_col_index, (op_in2_t*)0);
-      op_out_t val = (*i).op(in1, in2);
-      this->output_token(val);
-    }
+  for(typename vector<new_col_t>::iterator i = new_columns.begin(); i != new_columns.end(); ++i) {
+    op_in1_t& in1 = get_in_value((*i).col_index, (op_in1_t*)0);
+    op_in2_t& in2 = get_in_value((*i).other_col_index, (op_in2_t*)0);
+    op_out_t val = (*i).op(in1, in2);
+    this->output_token(val);
   }
   this->output_line();
   column = 0;

@@ -16,7 +16,13 @@ template<typename out_t> void generate_data(out_t& out, size_t num_columns, size
 {
   char buf[2048];
 
-  for(size_t line = 0; line < num_lines; ++line) {
+  for(size_t column = 0; column < num_columns; ++column) {
+    size_t len = sprintf(buf, "L0_C%zu", column);
+    out.process_key(buf, len);
+  }
+  out.process_keys();
+
+  for(size_t line = 1; line < num_lines; ++line) {
     char* next = buf;
     size_t base_len = sprintf(next, "L%zu_C", line);
     next += base_len;
@@ -25,7 +31,6 @@ template<typename out_t> void generate_data(out_t& out, size_t num_columns, size
       size_t len = sprintf(next, "%zu", column) + base_len;
       out.process_token(buf, len);
     }
-
     out.process_line();
   }
 
@@ -37,11 +42,15 @@ template<typename out_t> void generate_numeric_data(out_t& out, size_t num_colum
   char buf[2048];
   size_t count = 0;
 
-  for(size_t line = 0; line < num_lines; ++line) {
+  for(size_t column = 0; column < num_columns; ++column) {
+    size_t len = sprintf(buf, "C%zu", column);
+    out.process_key(buf, len);
+  }
+  out.process_keys();
+
+  for(size_t line = 1; line < num_lines; ++line) {
     for(size_t column = 0; column < num_columns; ++column) {
-      size_t len;
-      if(!line) len = sprintf(buf, "C%zu", column);
-      else len = sprintf(buf, "%zu", count++);
+      size_t len = sprintf(buf, "%zu", count++);
       out.process_token(buf, len);
     }
 
@@ -62,12 +71,13 @@ template<typename out_t> void feed_data(out_t& out, const char** data)
   const char** p = data;
 
   while(1) {
-    if(*p) {
-      size_t len = strlen(*p);
-      out.process_token(*p, len);
-      ++p;
-      f = 1;
-    }
+    if(*p) { size_t len = strlen(*p); out.process_key(*p, len); ++p; f = 1; }
+    else if(f) { out.process_keys(); ++p; f = 0; break; }
+    else break;
+  }
+
+  while(1) {
+    if(*p) { size_t len = strlen(*p); out.process_token(*p, len); ++p; f = 1; }
     else if(f) { out.process_line(); ++p; f = 0; }
     else break;
   }
@@ -92,10 +102,38 @@ template<typename input_base_t> class basic_simple_validater_t : public input_ba
   void reinit_state(int more_passes = 0) { column = 0; line = 0; }
   void set_expected(const char** expected) { this->expected = expected; }
 
+  void process_key(const char* token, size_t len) {
+    if(!*expected) {
+      stringstream msg;
+      msg << "line " << line << " is too long: ";
+      if(token) msg << " got \"" << token << '\"';
+      throw runtime_error(msg.str());
+    }
+    else if(strcmp(token, *expected)) {
+      stringstream msg;
+      if(token) msg << "got \"" << token << "\" ";
+      msg << "expected \"" << *expected << "\" on [" << line << ':' << column << ']';
+      throw runtime_error(msg.str());
+    }
+
+    ++expected;
+    ++column;
+  }
+
+  void process_keys() {
+    if(*expected) {
+      stringstream msg; msg << "line " << line << " is too short";
+      throw runtime_error(msg.str());
+    }
+    ++expected;
+    column = 0;
+    ++line;
+  }
+
   void process_token(const char* token, size_t len) {
     if(!*expected) {
       stringstream msg;
-      msg << "line " << line << ". is too long: ";
+      msg << "line " << line << " is too long: ";
       if(token) msg << " got \"" << token << '\"';
       throw runtime_error(msg.str());
     }
@@ -190,6 +228,8 @@ int validate_stacker()
     st.add_action(0, "C2", ST_REMOVE);
     st.add_action(0, "C3", ST_STACK);
     v.set_expected(stacker_expect3);
+    csv_writer w; w.set_fd(STDOUT_FILENO);
+    generate_numeric_data(w, 4, 3);
     generate_numeric_data(st, 4, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
@@ -591,6 +631,130 @@ int validate_range_stacker()
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
+// threader
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* threader_expect[] = {
+  "L0_C0", "L0_C1", "L0_C2", 0,
+  "L1_C0", "L1_C1", "L1_C2", 0,
+  "L2_C0", "L2_C1", "L2_C2", 0,
+  0
+};
+
+int validate_threader()
+{
+  int ret_val = 0;
+
+  try {
+    threader<simple_validater> t;
+    t.get_out().set_expected(threader_expect);
+    generate_data(t, 3, 2);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// subset_tee
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* subset_tee_input[] = {
+  "C0", "C1", "C2",  0,
+  "0",  "1",  "2",   0,
+  "0",  "4",  "5",   0,
+  "0",  "4",  "7",   0,
+  "1",  "7",  "8",   0,
+  "1",  "7",  "",    0,
+  "1",  "10", "11",  0,
+  0
+};
+
+const char* subset_tee_expect1[] = {
+  "C0", "C1", 0,
+  "0",  "1",  0,
+  "0",  "4",  0,
+  "0",  "4",  0,
+  "1",  "7",  0,
+  "1",  "7",  0,
+  "1",  "10", 0,
+  0
+};
+
+const char* subset_tee_expect2[] = {
+  "C2",  0,
+  "2",   0,
+  "5",   0,
+  "7",   0,
+  "8",   0,
+  "",    0,
+  "11",  0,
+  0
+};
+
+int validate_subset_tee()
+{
+  int ret_val = 0;
+
+  try {
+    subset_tee st;
+    dynamic_simple_validater v1;
+    dynamic_simple_validater v2;
+    st.set_dest(v1);
+    st.add_data(1, "^C0$");
+    st.add_data(1, "^C1$");
+    v1.set_expected(subset_tee_expect1);
+    st.set_dest(v2);
+    st.add_data(1, "^C2$");
+    v2.set_expected(subset_tee_expect2);
+    feed_data(st, subset_tee_input);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+// ordered_tee
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+const char* ordered_tee_input[] = {
+  "C0", "C1", "C2",  0,
+  "0",  "1",  "2",   0,
+  "0",  "4",  "5",   0,
+  "0",  "4",  "7",   0,
+  "1",  "7",  "8",   0,
+  "1",  "7",  "",    0,
+  "1",  "10", "11",  0,
+  0
+};
+
+int validate_ordered_tee()
+{
+  int ret_val = 0;
+
+  try {
+    ordered_tee ot;
+    dynamic_simple_validater v1;
+    ot.add_out(v1);
+    v1.set_expected(ordered_tee_input);
+    dynamic_simple_validater v2;
+    ot.add_out(v2);
+    v2.set_expected(ordered_tee_input);
+    feed_data(ot, ordered_tee_input);
+  }
+  catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
+  catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
+  
+  return ret_val;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
 // main
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -603,6 +767,9 @@ int main(int argc, char * argv[])
   validate_binary_col_adder();
   validate_summarizer();
   validate_range_stacker();
+  validate_threader();
+  validate_subset_tee();
+  validate_ordered_tee();
 
   return ret_val;
 }
