@@ -327,15 +327,14 @@ public:
   }
   void close() { if(h != INVALID_HANDLE_VALUE && !CloseHandle(h)) throw runtime_error("can't close output file"); h = INVALID_HANDLE_VALUE; }
 #else
-  int fd;
   file_writer_t() : fd(-1) {}
   ~file_writer_t() { if(fd >= 0) ::close(fd); }
   void open(const char* path) { if(fd < 0) close(); fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
   void write(const void* buf, size_t len, bool silent = 0) {
-    for(char* begin = fd_buf; len;) {
+    for(const void* begin = buf; len;) {
       ssize_t num_written = ::write(fd, begin, len);
       if(num_written == (ssize_t)len) { break; }
-      else if(num_written >= 0) { begin += num_written; len -= num_written; }
+      else if(num_written >= 0) { begin = static_cast<const char*>(begin) + num_written; len -= num_written; }
       else if(errno == EINTR) { continue; }
       else if(!silent) { throw runtime_error("unable to write"); }
     }
@@ -446,7 +445,7 @@ public:
   }
   ssize_t read(void* buf, size_t len) { DWORD num_read; if(!ReadFile(h, buf, len, &num_read, NULL)) throw runtime_error("couldn't read"); return num_read; }
 #else
-  console_reader_t() : fd(-1), return_on_eagain(0) {}
+  console_reader_t() : fd(-1) {}
   void set_fd(int fd) { this->fd = fd; }
   ssize_t read(void* buf, size_t len) { ssize_t num_read = ::read(fd, buf, len); if(num_read < 0) throw runtime_error("couldn't read"); return num_read; }
 #endif

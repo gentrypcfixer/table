@@ -1,4 +1,3 @@
-#include <windows.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -57,6 +56,7 @@ void copy(const char* from, const char* to)
   close(tfd);
 }
 
+#ifdef _WIN32
 void copy2(const char* from, const char* to)
 {
   const DWORD read_size = 1024 * 1024;
@@ -79,6 +79,7 @@ void copy2(const char* from, const char* to)
   CloseHandle(ffd);
   CloseHandle(tfd);
 }
+#endif
 
 int main(int argc, char * argv[])
 {
