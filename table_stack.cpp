@@ -7,6 +7,7 @@ using namespace table;
 
 void print_help()
 {
+  cout << "table_stack libtable_" << table::major_ver() << '.' << table::minor_ver() << " by Eric Gentry\n";
   cout << "table_stack [options]\n";
   cout << "    -h       display this help\n";
   cout << "    -s       columns matching following arguments should be stacked\n";

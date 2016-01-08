@@ -7,6 +7,7 @@ using namespace table;
 
 void print_help()
 {
+  cout << "table_col_adder libtable_" << table::major_ver() << '.' << table::minor_ver() << " by Eric Gentry\n";
   cout << "table_col_adder col_regex new_col_name from to\n";
   cout << "    col_regex      search expression used to select input column\n";
   cout << "    new_col_name   name of the column to add, can use \\d notition to base it on input column name\n";
