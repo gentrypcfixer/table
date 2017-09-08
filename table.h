@@ -1,7 +1,7 @@
 #ifndef table_h_
 #define table_h_
 
-#define TABLE_MAJOR_VER 4
+#define TABLE_MAJOR_VER 5
 #define TABLE_MINOR_VER 0
 
 #include <string>
@@ -387,17 +387,26 @@ class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t
 template<typename input_base_t, typename output_base_t> class basic_csv_writer_t : public input_base_t, public output_base_t
 {
 protected:
+  bool show_keys_;
   int line;
   int num_columns;
   int column;
 
-  basic_csv_writer_t() : column(0) {}
+  basic_csv_writer_t() : show_keys_(1), column(0) {}
 
 public:
+  void hide_keys() { show_keys_ = 0; }
+  void show_keys() { show_keys_ = 1; }
   void reinit(int more_passes = 0) { reinit_state(); }
   void reinit_state(int more_passes = 0) { column = 0; }
-  void process_key(const char* token, size_t len) { if(column) output_base_t::output(','); output_base_t::output(token, len); ++column; }
-  void process_keys() { num_columns = column; output_base_t::output('\n'); column = 0; line = 1; }
+  void process_key(const char* token, size_t len) { 
+    if(show_keys_) {
+      if(column) output_base_t::output(',');
+      output_base_t::output(token, len);
+    }
+    ++column;
+  }
+  void process_keys() { if(show_keys_) output_base_t::output('\n'); num_columns = column; column = 0; line = 1; }
   void process_token(const char* token, size_t len) { if(column) output_base_t::output(','); output_base_t::output(token, len); ++column; }
   void process_token(double token) { char buf[32]; size_t len = dtostr(token, buf); process_token(buf, len); }
   void process_line() {
@@ -544,7 +553,7 @@ protected:
   pthread_cond_t cons_cond;
   pthread_t thread;
 
-  basic_threader_t() : thread_created(0) {}
+  basic_threader_t();
   ~basic_threader_t();
   void resize_write_chunk(size_t min_size);
   void inc_write_chunk(bool term = 1);
@@ -1677,6 +1686,17 @@ template<typename input_base_t, typename output_base_t> void* basic_threader_t<i
   t.output_stream();
 
   return 0;
+}
+
+template<typename input_base_t, typename output_base_t> basic_threader_t<input_base_t, output_base_t>::basic_threader_t() :
+  write_chunk(0), read_chunk(0), thread_created(0)
+{
+  for(int c = 0; c < 8; ++c) {
+    delete[] chunks[c].start;
+    chunks[c].start = new char[8 * 1024];
+    chunks[c].end = chunks[c].start + 8 * 1024;
+  }
+  write_chunk_next = chunks[0].start;
 }
 
 template<typename input_base_t, typename output_base_t> basic_threader_t<input_base_t, output_base_t>::~basic_threader_t()

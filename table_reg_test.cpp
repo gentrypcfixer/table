@@ -648,7 +648,7 @@ int validate_threader()
   try {
     threader<simple_validater> t;
     t.get_out().set_expected(threader_expect);
-    generate_data(t, 3, 2);
+    generate_data(t, 3, 3);
   }
   catch(exception& e) { cerr << __func__ << " exception: " << e.what() << endl; ret_val = 1; }
   catch(...) { cerr << __func__ << " unknown Exception" << endl; ret_val = 1; }
