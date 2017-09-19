@@ -2,7 +2,7 @@
 #define table_h_
 
 #define TABLE_MAJOR_VER 5
-#define TABLE_MINOR_VER 0
+#define TABLE_MINOR_VER 1
 
 #include <string>
 #include <sstream>
@@ -299,6 +299,7 @@ public:
       else if(num_written >= 0) { begin += num_written; len -= num_written; }
       else if(errno == EINTR) {}
       else if(!silent) { throw runtime_error("unable to write"); }
+      else { break; }
     }
   }
 #endif
@@ -337,6 +338,7 @@ public:
       else if(num_written >= 0) { begin = static_cast<const char*>(begin) + num_written; len -= num_written; }
       else if(errno == EINTR) { continue; }
       else if(!silent) { throw runtime_error("unable to write"); }
+      else { break; }
     }
   }
   void close() { if(fd >= 0 && ::close(fd)) throw runtime_error("can't close output file"); fd = -1; }
