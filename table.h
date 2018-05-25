@@ -2,7 +2,7 @@
 #define table_h_
 
 #define TABLE_MAJOR_VER 5
-#define TABLE_MINOR_VER 1
+#define TABLE_MINOR_VER 2
 
 #include <string>
 #include <sstream>
@@ -19,6 +19,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdexcept>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
