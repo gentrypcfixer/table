@@ -1,8 +1,8 @@
 #ifndef table_h_
 #define table_h_
 
-#define TABLE_MAJOR_VER 5
-#define TABLE_MINOR_VER 2
+#define TABLE_MAJOR_VER 6
+#define TABLE_MINOR_VER 0
 
 #include <string>
 #include <sstream>
