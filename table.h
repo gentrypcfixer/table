@@ -102,8 +102,6 @@ struct c_str_and_len_t
   c_str_and_len_t(const char* c_str, size_t len) : c_str(c_str), len(len) {}
 };
 
-class empty_class_t {};
-
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 // setting_fetcher
@@ -165,6 +163,8 @@ extern bool always_split_arg(int type, const char* key, size_t len);
 // pass
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+class empty_pass_t {};
+
 class dynamic_pass_t {
 public:
   virtual ~dynamic_pass_t() {}
@@ -225,10 +225,24 @@ public:
 // writer
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename out_t> class buffered_writer_t : public out_t
+class empty_writer_t {};
+
+class dynamic_writer_t
 {
-  buffered_writer_t(const buffered_writer_t& other);
-  buffered_writer_t& operator=(const buffered_writer_t& other);
+public:
+  virtual ~dynamic_writer_t() {}
+  virtual void write(char c) = 0;
+  virtual void write(const char* token, size_t len) = 0;
+  virtual void write(double token) = 0;
+  virtual void flush() = 0;
+};
+
+class empty_buffered_writer_t {};
+
+template<typename input_base_t, typename out_t> class basic_buffered_writer_t : public input_base_t, public out_t
+{
+  basic_buffered_writer_t(const basic_buffered_writer_t& other);
+  basic_buffered_writer_t& operator=(const basic_buffered_writer_t& other);
 
 protected:
   static const size_t buf_cap = 32 * 1024;
@@ -237,8 +251,8 @@ protected:
   char* end;
 
 public:
-  buffered_writer_t() : next(buf), end(buf + buf_cap) {}
-  ~buffered_writer_t() { if(next != buf) out_t::write(buf, next - buf, 1); }
+  basic_buffered_writer_t() : next(buf), end(buf + buf_cap) {}
+  ~basic_buffered_writer_t() { if(next != buf) out_t::write(buf, next - buf, 1); }
   void write(char c) { *next++ = c; if(next == end) { out_t::write(buf, next - buf); next = buf; } }
   void write(const char* token, size_t len) {
     for(const char* tbegin = token; len;) {
@@ -260,17 +274,17 @@ public:
 template<typename out_t> class writer_pass_t
 {
 protected:
-  buffered_writer_t<out_t> out;
+  basic_buffered_writer_t<empty_buffered_writer_t, out_t> out;
   void output(char c) { out.write(c); }
   void output(const char* token, size_t len) { out.write(token, len); }
   void output(double token) { out.write(token); }
   void flush() { out.flush(); }
 };
 
-class console_writer_t
+template<typename input_base_t> class basic_console_writer_t : public input_base_t
 {
-  console_writer_t(const console_writer_t& other);
-  console_writer_t& operator=(const console_writer_t& other);
+  basic_console_writer_t(const basic_console_writer_t& other);
+  basic_console_writer_t& operator=(const basic_console_writer_t& other);
 #ifdef _WIN32
   HANDLE h;
 #else
@@ -279,7 +293,7 @@ class console_writer_t
 
 public:
 #ifdef _WIN32
-  console_writer_t() : h(INVALID_HANDLE_VALUE) {}
+  basic_console_writer_t() : h(INVALID_HANDLE_VALUE) {}
   void set_fd(int fd) {
     if(fd == STDIN_FILENO) h = GetStdHandle(STD_INPUT_HANDLE);
     else if(fd == STDOUT_FILENO) h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -291,7 +305,7 @@ public:
     if(!silent && (!success || num_written != len)) { throw runtime_error("unable to write"); }
   }
 #else
-  console_writer_t() : fd(-1) {}
+  basic_console_writer_t() : fd(-1) {}
   void set_fd(int fd) { if(fd < 0) throw runtime_error("invalid fd"); this->fd = fd; }
   void write(const void* buf, size_t len, bool silent = 0) {
     for(const char* begin = static_cast<const char*>(buf); len;) {
@@ -306,12 +320,14 @@ public:
 #endif
 };
 
+class console_writer_t : public basic_console_writer_t<empty_writer_t> {};
+class dynamic_console_writer_t : public basic_console_writer_t<dynamic_writer_t> {};
 class console_writer_pass_t : public writer_pass_t<console_writer_t> { public: void set_fd(int fd) { out.set_fd(fd); } };
 
-class file_writer_t
+template<typename input_base_t> class basic_file_writer_t : public input_base_t
 {
-  file_writer_t(const file_writer_t& other);
-  file_writer_t& operator=(const file_writer_t& other);
+  basic_file_writer_t(const basic_file_writer_t& other);
+  basic_file_writer_t& operator=(const basic_file_writer_t& other);
 #ifdef _WIN32
   HANDLE h;
 #else
@@ -320,8 +336,8 @@ class file_writer_t
 
 public:
 #ifdef _WIN32
-  file_writer_t() : h(INVALID_HANDLE_VALUE) {}
-  ~file_writer_t() { if(h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+  basic_file_writer_t() : h(INVALID_HANDLE_VALUE) {}
+  ~basic_file_writer_t() { if(h != INVALID_HANDLE_VALUE) CloseHandle(h); }
   void open(const char* path) { if(h != INVALID_HANDLE_VALUE) close(); h = CreateFile(path, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL); if(h == INVALID_HANDLE_VALUE) throw runtime_error("can't open output file"); }
   void write(const void* buf, size_t len, bool silent = 0) {
     DWORD num_written; BOOL success = WriteFile(h, buf, len, &num_written, NULL);
@@ -329,8 +345,8 @@ public:
   }
   void close() { if(h != INVALID_HANDLE_VALUE && !CloseHandle(h)) throw runtime_error("can't close output file"); h = INVALID_HANDLE_VALUE; }
 #else
-  file_writer_t() : fd(-1) {}
-  ~file_writer_t() { if(fd >= 0) ::close(fd); }
+  basic_file_writer_t() : fd(-1) {}
+  ~basic_file_writer_t() { if(fd >= 0) ::close(fd); }
   void open(const char* path) { if(fd < 0) close(); fd = ::open(path, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); if(fd < 0) throw runtime_error("can't open output file"); }
   void write(const void* buf, size_t len, bool silent = 0) {
     for(const void* begin = buf; len;) {
@@ -346,6 +362,8 @@ public:
 #endif
 };
 
+class file_writer_t : public basic_file_writer_t<empty_writer_t> {};
+class dynamic_file_writer_t : public basic_file_writer_t<dynamic_writer_t> {};
 class file_writer_pass_t : public writer_pass_t<file_writer_t> { public: void open(const char* path) { out.open(path); } void close() { out.close(); } };
 
 
@@ -377,9 +395,9 @@ public:
   void process_stream() { if(line <= 19) process_data(); this->flush(); }
 };
 
-class tabular_writer : public basic_tabular_writer_t<empty_class_t, console_writer_pass_t> { public: tabular_writer() {} tabular_writer(int fd) { set_fd(fd); } };
+class tabular_writer : public basic_tabular_writer_t<empty_pass_t, console_writer_pass_t> { public: tabular_writer() {} tabular_writer(int fd) { set_fd(fd); } };
 class dynamic_tabular_writer : public basic_tabular_writer_t<dynamic_pass_t, console_writer_pass_t> { public: dynamic_tabular_writer() {} dynamic_tabular_writer(int fd) { set_fd(fd); } };
-class tabular_file_writer : public basic_tabular_writer_t<empty_class_t, file_writer_pass_t> { public: tabular_file_writer() {} tabular_file_writer(const char* path) { open(path); } };
+class tabular_file_writer : public basic_tabular_writer_t<empty_pass_t, file_writer_pass_t> { public: tabular_file_writer() {} tabular_file_writer(const char* path) { open(path); } };
 class dynamic_tabular_file_writer : public basic_tabular_writer_t<dynamic_pass_t, file_writer_pass_t> { public: dynamic_tabular_file_writer() {} dynamic_tabular_file_writer(const char* path) { open(path); } };
 
 
@@ -428,9 +446,9 @@ public:
   }
 };
 
-class csv_writer : public basic_csv_writer_t<empty_class_t, console_writer_pass_t> { public: csv_writer() {} csv_writer(int fd) { set_fd(fd); } };
+class csv_writer : public basic_csv_writer_t<empty_pass_t, console_writer_pass_t> { public: csv_writer() {} csv_writer(int fd) { set_fd(fd); } };
 class dynamic_csv_writer : public basic_csv_writer_t<dynamic_pass_t, console_writer_pass_t> { public: dynamic_csv_writer() {} dynamic_csv_writer(int fd) { set_fd(fd); } };
-class csv_file_writer : public basic_csv_writer_t<empty_class_t, file_writer_pass_t> { public: csv_file_writer() {} csv_file_writer(const char* path) { open(path); } };
+class csv_file_writer : public basic_csv_writer_t<empty_pass_t, file_writer_pass_t> { public: csv_file_writer() {} csv_file_writer(const char* path) { open(path); } };
 class dynamic_csv_file_writer : public basic_csv_writer_t<dynamic_pass_t, file_writer_pass_t> { public: dynamic_csv_file_writer() {} dynamic_csv_file_writer(const char* path) { open(path); } };
 
 
@@ -572,9 +590,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class threader : public basic_threader_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class threader : public basic_threader_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_threader : public basic_threader_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_threader : public basic_threader_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_threader : public basic_threader_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_threader : public basic_threader_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -625,7 +643,7 @@ public:
   void process_stream() { for(typename map<dynamic_pass_t*, dest_data_t>::iterator ddi = dest_data.begin(); ddi != dest_data.end(); ++ddi) (*ddi).first->process_stream(); }
 };
 
-class subset_tee : public basic_subset_tee_t<empty_class_t> {};
+class subset_tee : public basic_subset_tee_t<empty_pass_t> {};
 class dynamic_subset_tee : public basic_subset_tee_t<dynamic_pass_t> {};
 
 
@@ -659,7 +677,7 @@ public:
   void process_stream();
 };
 
-class ordered_tee : public basic_ordered_tee_t<empty_class_t> {};
+class ordered_tee : public basic_ordered_tee_t<empty_pass_t> {};
 class dynamic_ordered_tee : public basic_ordered_tee_t<dynamic_pass_t> {};
 
 
@@ -724,9 +742,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class stacker : public basic_stacker_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class stacker : public basic_stacker_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_stacker : public basic_stacker_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_stacker : public basic_stacker_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_stacker : public basic_stacker_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_stacker : public basic_stacker_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -796,9 +814,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class splitter : public basic_splitter_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class splitter : public basic_splitter_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_splitter : public basic_splitter_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_splitter : public basic_splitter_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_splitter : public basic_splitter_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_splitter : public basic_splitter_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -858,9 +876,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class sorter : public basic_sorter_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class sorter : public basic_sorter_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_sorter : public basic_sorter_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_sorter : public basic_sorter_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_sorter : public basic_sorter_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_sorter : public basic_sorter_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -908,9 +926,9 @@ public:
   void process();
 };
 
-template<typename out_t> class row_joiner : public basic_row_joiner_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class row_joiner : public basic_row_joiner_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_row_joiner : public basic_row_joiner_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_row_joiner : public basic_row_joiner_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_row_joiner : public basic_row_joiner_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_row_joiner : public basic_row_joiner_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1005,9 +1023,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class col_pruner : public basic_col_pruner_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class col_pruner : public basic_col_pruner_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_col_pruner : public basic_col_pruner_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_col_pruner : public basic_col_pruner_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_col_pruner : public basic_col_pruner_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_col_pruner : public basic_col_pruner_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1040,9 +1058,9 @@ public:
   void process_stream() { this->output_stream(); }
 };
 
-template<typename out_t> class combiner : public basic_combiner_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class combiner : public basic_combiner_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_combiner : public basic_combiner_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_combiner : public basic_combiner_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_combiner : public basic_combiner_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_combiner : public basic_combiner_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1126,9 +1144,9 @@ public:
   void process_stream() { print_data(); output_base_t::output_stream(); }
 };
 
-template<typename out_t> class summarizer : public basic_summarizer_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class summarizer : public basic_summarizer_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_summarizer : public basic_summarizer_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_summarizer : public basic_summarizer_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_summarizer : public basic_summarizer_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_summarizer : public basic_summarizer_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1176,9 +1194,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class range_stacker : public basic_range_stacker_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class range_stacker : public basic_range_stacker_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_range_stacker : public basic_range_stacker_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_range_stacker : public basic_range_stacker_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_range_stacker : public basic_range_stacker_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_range_stacker : public basic_range_stacker_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1222,9 +1240,9 @@ public:
   void process_stream() { this->output_stream(); }
 };
 
-template<typename out_t> class base_converter : public basic_base_converter_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class base_converter : public basic_base_converter_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_base_converter : public basic_base_converter_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_base_converter : public basic_base_converter_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_base_converter : public basic_base_converter_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_base_converter : public basic_base_converter_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1284,9 +1302,9 @@ public:
   void process_stream();
 };
 
-template<typename out_t> class variance_analyzer : public basic_variance_analyzer_t<empty_class_t, single_output_pass_class_t<out_t> > {};
+template<typename out_t> class variance_analyzer : public basic_variance_analyzer_t<empty_pass_t, single_output_pass_class_t<out_t> > {};
 template<typename out_t> class dynamic_variance_analyzer : public basic_variance_analyzer_t<dynamic_pass_t, single_output_pass_class_t<out_t> > {};
-class dynamic_output_variance_analyzer : public basic_variance_analyzer_t<empty_class_t, single_output_pass_class_t<dynamic_pass_t*> > {};
+class dynamic_output_variance_analyzer : public basic_variance_analyzer_t<empty_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 class dynamic_output_dynamic_variance_analyzer : public basic_variance_analyzer_t<dynamic_pass_t, single_output_pass_class_t<dynamic_pass_t*> > {};
 
 
@@ -1395,11 +1413,11 @@ public:
   void process_stream() { this->output_stream(); }
 };
 
-template<typename out_t> class unary_col_adder : public basic_unary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, double, double, double (*)(double)> {};
-template<typename out_t> class unary_c_str_col_adder : public basic_unary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> {};
-template<typename out_t> class unary_double_c_str_col_adder : public basic_unary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, double, c_str_and_len_t, c_str_and_len_t (*)(double)> {};
-template<typename out_t> class unary_c_str_double_col_adder : public basic_unary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, c_str_and_len_t, double, double (*)(c_str_and_len_t)> {};
-template<typename out_t> class substitute_col_adder : public basic_unary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, substituter> {};
+template<typename out_t> class unary_col_adder : public basic_unary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, double, double, double (*)(double)> {};
+template<typename out_t> class unary_c_str_col_adder : public basic_unary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t)> {};
+template<typename out_t> class unary_double_c_str_col_adder : public basic_unary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, double, c_str_and_len_t, c_str_and_len_t (*)(double)> {};
+template<typename out_t> class unary_c_str_double_col_adder : public basic_unary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, c_str_and_len_t, double, double (*)(c_str_and_len_t)> {};
+template<typename out_t> class substitute_col_adder : public basic_unary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, substituter> {};
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1456,10 +1474,10 @@ public:
   void process_stream() { for(ci = columns.begin(); ci != columns.end(); ++ci) { delete[] (*ci).c_str_val.c_str; } columns.clear(); this->output_stream(); }
 };
 
-template<typename out_t> class binary_col_adder : public basic_binary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, double, double, double, double (*)(double, double)> {};
-template<typename out_t> class binary_c_str_col_adder : public basic_binary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t, c_str_and_len_t)> {};
-template<typename out_t> class binary_double_c_str_col_adder : public basic_binary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, double, double, c_str_and_len_t, c_str_and_len_t (*)(double, double)> {};
-template<typename out_t> class binary_c_str_double_col_adder : public basic_binary_col_adder_t<empty_class_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, double, double (*)(c_str_and_len_t, c_str_and_len_t)> {};
+template<typename out_t> class binary_col_adder : public basic_binary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, double, double, double, double (*)(double, double)> {};
+template<typename out_t> class binary_c_str_col_adder : public basic_binary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t, c_str_and_len_t (*)(c_str_and_len_t, c_str_and_len_t)> {};
+template<typename out_t> class binary_double_c_str_col_adder : public basic_binary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, double, double, c_str_and_len_t, c_str_and_len_t (*)(double, double)> {};
+template<typename out_t> class binary_c_str_double_col_adder : public basic_binary_col_adder_t<empty_pass_t, single_output_pass_class_t<out_t>, c_str_and_len_t, c_str_and_len_t, double, double (*)(c_str_and_len_t, c_str_and_len_t)> {};
 
 
 }

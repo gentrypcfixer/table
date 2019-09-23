@@ -172,7 +172,7 @@ template<typename input_base_t> class basic_simple_validater_t : public input_ba
   }
 };
 
-class simple_validater : public basic_simple_validater_t<empty_class_t> {};
+class simple_validater : public basic_simple_validater_t<empty_pass_t> {};
 class dynamic_simple_validater : public basic_simple_validater_t<dynamic_pass_t> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
